@@ -10,7 +10,7 @@ import { G, isIOS, isStandalone } from '../ctx';
 import { h, setClass, setScale, setText, clear } from '../dom';
 import { burstAt, toast } from '../fx';
 import { showModal } from '../modal';
-import { sfx, haptic, setMusic, setSound, setHaptics, unlockAudio } from '../../audio/sfx';
+import { sfx, haptic, setMusic, setSound, setHaptics, setIgnoreMute, unlockAudio } from '../../audio/sfx';
 import type { Screen } from './types';
 
 const SUBS = [
@@ -274,6 +274,12 @@ export function createMehr(): Screen {
     };
     toggle('Soundeffekte', 'Klicks, Münzen, Explosionen', () => G.s.settings.sound, (v) => { G.s.settings.sound = v; setSound(v); });
     toggle('Musik', 'Ruhige Weltraum-Klänge', () => G.s.settings.music, (v) => { G.s.settings.music = v; unlockAudio(); setMusic(v); });
+    toggle('Ton im Lautlos-Modus', 'Sounds auch bei eingeschaltetem Lautlos-Schalter am iPhone (pausiert dann andere Musik)', () => G.s.settings.ignoreMute, (v) => {
+      G.s.settings.ignoreMute = v;
+      setIgnoreMute(v);
+      unlockAudio();
+      if (G.s.settings.sound) setTimeout(() => sfx.claim(), 120);
+    });
     toggle('Vibration', 'Haptisches Feedback (iOS 18+)', () => G.s.settings.haptics, (v) => { G.s.settings.haptics = v; setHaptics(v); });
     toggle('Wissenschaftliche Zahlen', 'z. B. 1,23e15 statt 1,23 Brd', () => G.s.settings.notation === 'sci', (v) => {
       G.s.settings.notation = v ? 'sci' : 'short';

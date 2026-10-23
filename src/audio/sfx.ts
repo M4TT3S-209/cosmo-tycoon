@@ -11,17 +11,30 @@ let lastCoin = 0;
 
 type AudioSessionNav = Navigator & { audioSession?: { type: string } };
 
+let ignoreMute = false;
+
+function applySession(): void {
+  try {
+    // iOS: "ambient" respektiert den Lautlos-Schalter und mischt sich mit anderer Musik,
+    // "playback" spielt immer (pausiert dann aber andere Musik)
+    const nav = navigator as AudioSessionNav;
+    if (nav.audioSession) nav.audioSession.type = ignoreMute ? 'playback' : 'ambient';
+  } catch {
+    /* nicht unterstützt */
+  }
+}
+
+/** Sounds auch bei aktivem Lautlos-Schalter abspielen (iOS) */
+export function setIgnoreMute(on: boolean): void {
+  ignoreMute = on;
+  applySession();
+}
+
 function ensure(): AudioContext | null {
   if (ctx) return ctx;
   const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AC) return null;
-  try {
-    // iOS: respektiert den Stummschalter und unterbricht keine andere Musik
-    const nav = navigator as AudioSessionNav;
-    if (nav.audioSession) nav.audioSession.type = 'ambient';
-  } catch {
-    /* egal */
-  }
+  applySession();
   ctx = new AC();
   master = ctx.createGain();
   master.gain.value = 0.9;
@@ -35,12 +48,42 @@ function ensure(): AudioContext | null {
   return ctx;
 }
 
-/** Beim ersten Tippen aufrufen (iOS erlaubt Audio nur nach einer Geste) */
+/**
+ * Muss synchron in einem echten Tipp-Ereignis laufen (touchend/click): iOS erlaubt Audio
+ * nur dann. pointerdown zählt auf dem iPhone NICHT als Freigabe-Geste.
+ */
 export function unlockAudio(): void {
   const c = ensure();
   if (!c) return;
-  if (c.state === 'suspended') void c.resume();
-  if (musicOn) startMusic();
+  if (c.state === 'running') {
+    if (musicOn) startMusic();
+    return;
+  }
+  // stiller Mini-Puffer "weckt" die Audio-Ausgabe auf älteren iOS-Versionen
+  try {
+    const src = c.createBufferSource();
+    src.buffer = c.createBuffer(1, 1, 22050);
+    src.connect(c.destination);
+    src.start(0);
+  } catch {
+    /* egal */
+  }
+  c.resume().then(
+    () => {
+      if (musicOn) startMusic();
+    },
+    () => {},
+  );
+}
+
+/** Dauerhafte Freigabe bei jedem Tippen – auch nach App-Wechsel oder Unterbrechung (Anruf) */
+export function installAudioUnlock(): void {
+  const handler = () => {
+    if (!ctx || ctx.state !== 'running') unlockAudio();
+  };
+  for (const ev of ['touchend', 'click', 'keydown']) {
+    window.addEventListener(ev, handler, { capture: true, passive: true });
+  }
 }
 
 export function suspendAudio(): void {
@@ -48,7 +91,7 @@ export function suspendAudio(): void {
 }
 
 export function resumeAudio(): void {
-  if (ctx && ctx.state === 'suspended') void ctx.resume();
+  if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
 }
 
 export function setSound(on: boolean): void {

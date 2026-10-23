@@ -8,7 +8,7 @@ import { G } from './ui/ctx';
 import { buildApp, dailyDialog, frameUi, offlineDialog } from './ui/app';
 import { showIntro, tutorialActive } from './ui/tutorial';
 import { toast } from './ui/fx';
-import { resumeAudio, suspendAudio, unlockAudio } from './audio/sfx';
+import { installAudioUnlock, resumeAudio, suspendAudio } from './audio/sfx';
 import { initDebug } from './ui/debug';
 
 const OFFLINE_MIN_SEC = 45;
@@ -44,12 +44,8 @@ function boot(): void {
     if (!tutorialActive()) dailyDialog();
   }
 
-  // Erste Berührung schaltet Audio frei (iOS-Vorgabe)
-  const unlock = () => {
-    unlockAudio();
-    window.removeEventListener('pointerdown', unlock);
-  };
-  window.addEventListener('pointerdown', unlock);
+  // Tippen schaltet Audio frei (iOS-Vorgabe) – bleibt aktiv, falls iOS den Ton später pausiert
+  installAudioUnlock();
 
   // Kein Pinch-Zoom / Doppeltipp-Zoom in Safari
   document.addEventListener('gesturestart', (e) => e.preventDefault());

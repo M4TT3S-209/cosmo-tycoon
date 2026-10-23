@@ -42,6 +42,8 @@ export interface Settings {
   sound: boolean;
   music: boolean;
   haptics: boolean;
+  /** Sounds auch bei aktivem Lautlos-Schalter (iOS) */
+  ignoreMute: boolean;
   notation: Notation;
   autoBuy: boolean;
   autoUpgrade: boolean;
@@ -163,6 +165,7 @@ export function defaultState(now = Date.now()): GameState {
       sound: true,
       music: true,
       haptics: true,
+      ignoreMute: false,
       notation: 'short',
       autoBuy: true,
       autoUpgrade: true,

@@ -20,7 +20,7 @@ import { createKosmos, kosmosBadge } from './screens/kosmos';
 import { createMehr, setReplaceHandler } from './screens/mehr';
 import type { Screen } from './screens/types';
 import { DAILY } from '../data/daily';
-import { sfx, haptic, setHaptics, setMusic, setSound } from '../audio/sfx';
+import { sfx, haptic, setHaptics, setIgnoreMute, setMusic, setSound } from '../audio/sfx';
 
 let screenBox: HTMLElement;
 let screens: Record<TabId, Screen>;
@@ -67,6 +67,7 @@ export function applySettings(): void {
   setSound(st.sound);
   setMusic(st.music);
   setHaptics(st.haptics);
+  setIgnoreMute(st.ignoreMute);
   shownPlanet = -1;
   G.dirty = true;
 }
