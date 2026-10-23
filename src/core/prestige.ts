@@ -3,6 +3,7 @@ import { BUILDING_COUNT } from '../data/buildings';
 import { emit } from './bus';
 import { canGalaxyJump, lab, pendingQuantum, pendingStardust, planetFor, qlvl, startCash } from './economy';
 import { regenerateQuests } from './meta';
+import { XP, addXp, syncShips } from './rank';
 import type { GameState } from './state';
 
 /** Setzt den aktuellen Lauf zurück (Geld, Anlagen, Upgrades, ggf. Manager) */
@@ -36,7 +37,12 @@ export function supernova(s: GameState): boolean {
   const newPlanet = planetFor(s);
   const planetChanged = newPlanet > s.planet;
   s.planet = Math.max(s.planet, newPlanet);
+  s.stats.bestPlanet = Math.max(s.stats.bestPlanet, s.planet);
+  // eine laufende Prüfung endet mit der Supernova
+  s.challenge = { active: '', goal: 0 };
   resetRun(s);
+  addXp(s, XP.supernova + Math.round(10 * Math.log10(1 + gain)));
+  syncShips(s);
   regenerateQuests(s);
   emit('supernova', { gain, planetChanged, planet: s.planet });
   emit('structure', {});
@@ -60,7 +66,9 @@ export function galaxyJump(s: GameState): boolean {
   s.stardustEarned = 0;
   s.supernovas = 0;
   s.planet = planetFor(s);
+  s.challenge = { active: '', goal: 0 };
   resetRun(s);
+  addXp(s, XP.galaxy);
   regenerateQuests(s);
   emit('galaxy', { gain });
   emit('structure', {});

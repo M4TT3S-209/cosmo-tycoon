@@ -4,6 +4,7 @@ import { BUILDINGS, BUILDING_COUNT } from '../data/buildings';
 import { DAILY, type DailyReward } from '../data/daily';
 import { UPGRADES } from '../data/upgrades';
 import { addGems, earn, grantBoost, timeWarp } from './actions';
+import { XP, addXp } from './rank';
 import { emit } from './bus';
 import { compute, managerCost, newCalc, nextMilestone, offlineCapSec, offlineEfficiency } from './economy';
 import { fmt } from './format';
@@ -19,6 +20,7 @@ export function checkAchievements(s: GameState): number {
     if (cur >= goal) {
       s.achievements[a.id] = true;
       addGems(s, a.gems);
+      addXp(s, XP.achievement);
       emit('achievement', { def: a });
       n++;
     }
@@ -156,6 +158,7 @@ export function claimQuest(s: GameState, id: number): number {
   const q = s.quests[idx];
   const n = addGems(s, q.reward);
   s.stats.questsDone++;
+  addXp(s, XP.quest);
   const others = s.quests.filter((x) => x.id !== id).map((x) => x.type);
   s.quests[idx] = genQuest(s, [...others, q.type]);
   emit('structure', {});
@@ -190,6 +193,7 @@ export function claimDaily(s: GameState, now: number): DailyReward | null {
   if (r.gems) addGems(s, r.gems);
   if (r.boost) grantBoost(s, r.boost, now);
   if (r.warp) timeWarp(s, r.warp, now);
+  addXp(s, XP.daily);
   emit('structure', {});
   return r;
 }

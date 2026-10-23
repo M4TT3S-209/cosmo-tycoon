@@ -15,17 +15,28 @@ import { tick, newTickOut } from '../src/core/tick';
 import { supernova, galaxyJump } from '../src/core/prestige';
 import { claimQuest } from '../src/core/meta';
 import { fmt, fmtTime } from '../src/core/format';
+import { EXPEDITIONS, SHIP_MODULES } from '../src/data/expeditions';
+import { ARTIFACT_INDEX, RARITY_ORDER } from '../src/data/artifacts';
+import { buyCrate, claimExpedition, destUnlocked, missionAt, moduleCost, startExpedition, upgradeModule } from '../src/core/fleet';
+import { artifactSlots } from '../src/core/rank';
+import { abortChallenge, challengeGoal, challengesUnlocked, startChallenge } from '../src/core/challenges';
+import { simulateOffline } from '../src/core/offline';
+import { CHALLENGES } from '../src/data/challenges';
 
 declare const process: { argv: string[]; env: Record<string, string | undefined> };
 const HOURS = Number(process.argv[2] ?? 48);
 const DEBUG_S = Number(process.env.DEBUG_S ?? 0);
+/** OFFLINE=1: nach je 16 h aktivem Spiel 8 h offline (Nacht) */
+const OFFLINE = !!process.env.OFFLINE;
+const CHAL_CHANCE = Number(process.env.CHAL ?? 0.35);
 const s = defaultState(0);
 s.settings.autoSupernova = true;
 const calc = newCalc();
 const out = newTickOut();
 
-let t = 0; // Sekunden
-const log = (msg: string) => console.log(`${fmtTime(t).padStart(12)}  ${msg}`);
+let t = 0; // aktive Sekunden
+let real = 0; // Wanduhr-Sekunden (inkl. Offline-Phasen)
+const log = (msg: string) => console.log(`${fmtTime(OFFLINE ? real : t).padStart(12)}  ${msg}`);
 
 const marks = new Set<string>();
 function mark(key: string, msg: string) {
@@ -122,6 +133,49 @@ function botQuantum() {
   }
 }
 
+function artScore(id: string): number {
+  const d = ARTIFACT_INDEX[id];
+  const lvl = s.artifacts[id]?.level ?? 0;
+  const kind = d.kind === 'income' ? 100 : d.kind === 'dust' ? 80 : d.kind === 'bld' ? 30 + (d.b ?? 0) * 4 : d.kind === 'speed' ? 35 : 10;
+  return kind + RARITY_ORDER.indexOf(d.rarity) * 8 + lvl * 2;
+}
+
+function botFleet(maxMinutes: number) {
+  const nowMs = real * 1000;
+  for (let i = 0; i < s.fleet.ships.length; i++) {
+    const m = missionAt(s, i);
+    if (m && m.end <= nowMs) claimExpedition(s, i, nowMs);
+    if (!missionAt(s, i)) {
+      const opts = EXPEDITIONS.filter((d) => destUnlocked(s, d) && d.minutes <= maxMinutes);
+      const d = opts[opts.length - 1];
+      if (d) startExpedition(s, i, d.id, nowMs);
+    }
+  }
+  for (let k = 0; k < 60; k++) {
+    let best: [number, 'engine' | 'cargo' | 'shield'] | null = null;
+    let bc = Infinity;
+    s.fleet.ships.forEach((ship, i) => {
+      for (const mod of SHIP_MODULES) {
+        if (ship[mod.id] >= 25) continue;
+        const c = moduleCost(ship[mod.id], mod.id);
+        if (c < bc) {
+          bc = c;
+          best = [i, mod.id];
+        }
+      }
+    });
+    if (!best || bc > s.fleet.em) break;
+    upgradeModule(s, best[0], best[1]);
+  }
+  if (s.fleet.em > 4000) buyCrate(s);
+  s.equipped = Object.keys(s.artifacts).sort((a, b) => artScore(b) - artScore(a)).slice(0, artifactSlots(s));
+}
+
+let chalStart = 0;
+let chalDoneSeen = 0;
+let lastRankLog = 1;
+let nextNight = 16 * 3600;
+
 let lastHist = -1;
 let bestRate = 0;
 const pHist: number[] = [];
@@ -131,8 +185,30 @@ const end = HOURS * 3600;
 while (t < end) {
   const dt = s.runTime < 120 ? 0.25 : 1;
   for (let i = 0; i < BUILDING_COUNT; i++) tapBuilding(s, i);
-  tick(s, dt, 0, calc, out);
+  tick(s, dt, real * 1000, calc, out);
   t += dt;
+  real += dt;
+  if (Math.floor(t) % 60 === 0 && t % 1 < dt) botFleet(240);
+  if (OFFLINE && t >= nextNight) {
+    nextNight += 16 * 3600;
+    botFleet(480);
+    const r = simulateOffline(s, 8 * 3600, real * 1000);
+    real += 8 * 3600;
+    log(`🌙 Nacht offline: +${fmt(r.earned)} · ${r.bought} Anlagen · ${r.upgrades} Upgrades · ${r.managers} Manager gekauft`);
+    botFleet(240);
+  }
+  if (s.rank.level >= lastRankLog + 10) {
+    lastRankLog = Math.floor(s.rank.level / 10) * 10;
+    log(`⭐ Rang ${s.rank.level} · ${Object.keys(s.artifacts).length} Artefakte · ⚗️ ${fmt(s.fleet.em)} · Schiffe ${s.fleet.ships.length}`);
+  }
+  if (s.challenge.active) {
+    const id = s.challenge.active;
+    if (t - chalStart > 45 * 60) {
+      log(`🏅 Prüfung ${id} Stufe ${(s.challengeTiers[id] ?? 0) + 1} nicht geschafft (Ziel ${fmt(s.challenge.goal)}, erreicht ${fmt(s.runEarnings)})`);
+      abortChallenge(s);
+      botLab();
+    }
+  }
   if (Math.floor(t) % 2 === 0) botBuy();
   for (const q of s.quests) if (q.done) claimQuest(s, q.id);
   if (s.gems >= permCost(s)) {
@@ -160,7 +236,7 @@ while (t < end) {
   if (r > bestRate) bestRate = r;
   const p5 = pHist.length >= 2 ? pHist[pHist.length - 2] : 0;
   const stalled = s.runTime > 1200 && stardustExact(s) < p5 * 1.03 && p >= 0.2 * S;
-  const ready = S === 0 ? p >= FIRST_GOAL : s.runTime > 120 && (p >= S || stalled);
+  const ready = !s.challenge.active && (S === 0 ? p >= FIRST_GOAL : s.runTime > 120 && (p >= S || stalled));
   if (ready) {
     const planetBefore = s.planet;
     const run = s.runTime;
@@ -171,6 +247,16 @@ while (t < end) {
     bestRate = 0;
     botLab();
     if (DEBUG_S) log('   lab ' + JSON.stringify(s.lab));
+    if (challengesUnlocked(s) && Math.random() < CHAL_CHANCE) {
+      const open = CHALLENGES.filter((c) => challengeGoal(s, c.id) !== null).sort((a, b) => (s.challengeTiers[a.id] ?? 0) - (s.challengeTiers[b.id] ?? 0));
+      const c = open[Math.floor(Math.random() * Math.min(3, open.length))];
+      if (c && startChallenge(s, c.id)) chalStart = t;
+    }
+  }
+  if (!s.challenge.active && chalStart && s.stats.challengesDone > chalDoneSeen) {
+    chalDoneSeen = s.stats.challengesDone;
+    log(`🏅 Prüfung geschafft (${s.stats.challengesDone} gesamt) · Stufen ${JSON.stringify(s.challengeTiers)}`);
+    chalStart = 0;
   }
   if (canGalaxyJump(s) && pendingQuantum(s) >= Math.max(3, s.quantumEarned * 0.5)) {
     const q = pendingQuantum(s);
@@ -182,7 +268,8 @@ while (t < end) {
   if (t - lastReport >= 3600) {
     lastReport = t;
     compute(s, 0, calc);
-    log(`   [Status] Geld ${fmt(s.cash)} · ${fmt(calc.income)}/s · ✨ ${fmt(s.stardustEarned)} · Planet ${PLANETS[s.planet].name} · 💎 ${s.gems} · Anl. ${s.buildings.map((b) => b.owned).join('/')}`);
+    log(`   [Status] Geld ${fmt(s.cash)} · ${fmt(calc.income)}/s · ✨ ${fmt(s.stardustEarned)} · Planet ${PLANETS[s.planet].name} · 💎 ${s.gems} · Rang ${s.rank.level} · Art ${Object.keys(s.artifacts).length} · ⚗️ ${fmt(s.fleet.em)}`);
   }
 }
-console.log('\nErfolge:', Object.keys(s.achievements).length, '· Supernovas:', s.totalSupernovas, '· Upgrades max:', s.stats.upgradesBought);
+console.log('\nErfolge:', Object.keys(s.achievements).length, '· Supernovas:', s.totalSupernovas, '· Rang:', s.rank.level, '· Artefakte:', JSON.stringify(Object.fromEntries(Object.entries(s.artifacts).map(([k, v]) => [k, v.level]))), '· Prüfungen:', JSON.stringify(s.challengeTiers), '· Expeditionen:', s.fleet.expeditions);
+if (process.env.DUMP) console.log('JSON:' + JSON.stringify(s));

@@ -1,11 +1,14 @@
 import { BUILDINGS, BUILDING_COUNT } from '../../data/buildings';
 import { buyBuilding, tapBuilding } from '../../core/actions';
 import {
-  buildingCost, buyAmount, empireMultPer, minOwned, nextEmpireMilestone, nextMilestone, prevMilestone,
+  buildingBlocked, buildingCost, buyAmount, empireMultPer, isManaged, minOwned, nextEmpireMilestone, nextMilestone,
+  planetTrait, prevMilestone,
 } from '../../core/economy';
 import { fmt, fmtClock } from '../../core/format';
 import type { BuyMode } from '../../core/state';
-import { G } from '../ctx';
+import { CHALLENGE_INDEX } from '../../data/challenges';
+import { countdownLeft } from '../../core/challenges';
+import { G, openTab } from '../ctx';
 import { h, pressRepeat, setClass, setScale, setText, clear } from '../dom';
 import { burstAt, floatAt } from '../fx';
 import { sfx, haptic } from '../../audio/sfx';
@@ -45,6 +48,8 @@ export function createAnlagen(): Screen {
   const acc = new Array<number>(BUILDING_COUNT).fill(0);
   const accT = new Array<number>(BUILDING_COUNT).fill(0);
   let empText: HTMLElement;
+  let chalText: HTMLElement | null = null;
+  let chalFill: HTMLElement | null = null;
   let empFill: HTMLElement;
   let lastErr = 0;
 
@@ -70,7 +75,11 @@ export function createAnlagen(): Screen {
       { class: 'card bld' + (locked ? ' locked-card' : ''), 'data-b': i },
       icon,
       h('div', { class: 'col', style: 'gap:6px' },
-        h('div', { class: 'bld-head' }, h('span', { class: 'title' }, d.name), per),
+        h('div', { class: 'bld-head' },
+          h('span', { class: 'title' }, d.name),
+          planetTrait(s)?.bld?.[i] ? h('span', { class: 'trait-tag' }, `🪐×${planetTrait(s)!.bld![i]}`) : null,
+          per,
+        ),
         locked ? h('div', { class: 'sub' }, d.flavor) : bar,
       ),
       h('div', { class: 'bld-bottom', style: 'grid-column: 2' },
@@ -126,6 +135,28 @@ export function createAnlagen(): Screen {
     el.appendChild(h('div', { class: 'sticky' }, h('div', { class: 'buybar' }, seg)));
     markModes();
 
+    // laufende Prüfung als Banner
+    const ch = G.s.challenge.active ? CHALLENGE_INDEX[G.s.challenge.active] : null;
+    if (ch) {
+      chalText = h('div', { class: 'sub num' }, '');
+      chalFill = h('i');
+      const banner = h('button', { class: 'card chal-banner' },
+        h('div', { class: 'row' },
+          h('span', { style: 'font-size:24px' }, ch.emoji),
+          h('div', { class: 'col', style: 'text-align:left' },
+            h('div', { class: 'title' }, `Prüfung: ${ch.name}`),
+            h('div', { class: 'progress', style: 'margin-top:2px' }, chalFill),
+            chalText,
+          ),
+        ),
+      );
+      banner.addEventListener('click', () => openTab('kosmos', 'pruefung'));
+      el.appendChild(banner);
+    } else {
+      chalText = null;
+      chalFill = null;
+    }
+
     empText = h('div', { class: 'sub num', style: 'font-weight:700' }, '');
     empFill = h('i');
     el.appendChild(h('div', { class: 'card empire' }, empText, h('div', { class: 'progress', style: 'margin-top:6px' }, empFill)));
@@ -156,6 +187,16 @@ export function createAnlagen(): Screen {
     const c = G.calc;
     const out = G.out;
 
+    if (chalText && chalFill) {
+      if (!s.challenge.active) G.dirty = true;
+      else {
+        setScale(chalFill, Math.log10(1 + s.runEarnings) / Math.log10(1 + s.challenge.goal));
+        let t = `${fmt(s.runEarnings)} / ${fmt(s.challenge.goal)}`;
+        if (s.challenge.active === 'countdown') t += ` · ⏱ ${fmtClock(countdownLeft(s))}`;
+        setText(chalText, t);
+      }
+    }
+
     // Imperium-Meilenstein
     const allUnlocked = s.buildings.every((b) => b.owned > 0);
     if (!allUnlocked) {
@@ -177,6 +218,14 @@ export function createAnlagen(): Screen {
     for (const r of cards) {
       const i = r.i;
       const b = s.buildings[i];
+      if (buildingBlocked(s, i)) {
+        setText(r.amt, 'Gesperrt');
+        setText(r.cost, '🔒 Prüfung');
+        setClass(r.buy, 'off', true);
+        setClass(r.card, 'locked', true);
+        continue;
+      }
+      setClass(r.card, 'locked', false);
       if (r.locked) {
         if (b.owned > 0) {
           G.dirty = true;
@@ -190,7 +239,7 @@ export function createAnlagen(): Screen {
         continue;
       }
       const t = c.time[i];
-      const managed = s.managers[i];
+      const managed = isManaged(s, i);
       setText(r.lvl, String(b.owned));
       r.mgr.style.display = managed ? '' : 'none';
       const fast = t < 0.3 && (managed || b.running);

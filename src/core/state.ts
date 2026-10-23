@@ -1,7 +1,7 @@
 import { BUILDING_COUNT } from '../data/buildings';
 import type { Notation } from './format';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export interface BuildingState {
   owned: number;
@@ -33,6 +33,26 @@ export interface Quest {
   base: number;
   reward: number;
   done: boolean;
+}
+
+export interface ShipState {
+  engine: number;
+  cargo: number;
+  shield: number;
+}
+
+export interface Mission {
+  /** Hangar-Platz (Index in fleet.ships) */
+  slot: number;
+  dest: string;
+  /** Wanduhr-Zeiten in ms */
+  start: number;
+  end: number;
+}
+
+export interface ArtifactState {
+  level: number;
+  shards: number;
 }
 
 /** 0 = bis zum nächsten Meilenstein, -1 = Max */
@@ -67,6 +87,9 @@ export interface Stats {
   fastestSupernova: number;
   daysPlayed: number;
   lastDay: string;
+  /** höchster je erreichter Planet (auch über Galaxie-Sprünge hinweg) */
+  bestPlanet: number;
+  challengesDone: number;
 }
 
 export interface GameState {
@@ -107,6 +130,20 @@ export interface GameState {
   questSeq: number;
   daily: { last: string; streak: number };
 
+  fleet: {
+    ships: ShipState[];
+    missions: Mission[];
+    em: number;
+    emEarned: number;
+    expeditions: number;
+    crates: number;
+  };
+  artifacts: Record<string, ArtifactState>;
+  equipped: string[];
+  challenge: { active: string; goal: number };
+  challengeTiers: Record<string, number>;
+  rank: { level: number; xp: number };
+
   stats: Stats;
   settings: Settings;
   tutorial: { step: number; flags: Record<string, boolean> };
@@ -144,6 +181,13 @@ export function defaultState(now = Date.now()): GameState {
     quests: [],
     questSeq: 0,
     daily: { last: '', streak: 0 },
+    // Listen ohne feste Länge immer mit leerem Standard: merge() übernimmt sie dann 1:1
+    fleet: { ships: [], missions: [], em: 0, emEarned: 0, expeditions: 0, crates: 0 },
+    artifacts: {},
+    equipped: [],
+    challenge: { active: '', goal: 0 },
+    challengeTiers: {},
+    rank: { level: 1, xp: 0 },
     stats: {
       taps: 0,
       cometsTapped: 0,
@@ -160,6 +204,8 @@ export function defaultState(now = Date.now()): GameState {
       fastestSupernova: 0,
       daysPlayed: 0,
       lastDay: '',
+      bestPlanet: 0,
+      challengesDone: 0,
     },
     settings: {
       sound: true,
@@ -203,7 +249,12 @@ function merge(def: unknown, loaded: unknown): unknown {
   return loaded;
 }
 
-/** Migration + Validierung eines geladenen Objekts */
+/** Version eines geladenen Rohobjekts (für Migrationen) */
+export function rawVersion(raw: unknown): number {
+  return isObj(raw) && typeof raw.version === 'number' ? raw.version : 0;
+}
+
+/** Validierung eines geladenen Objekts + Auffüllen fehlender Felder (Migrationen: core/migrate.ts) */
 export function hydrate(raw: unknown, now = Date.now()): GameState {
   if (!isObj(raw) || typeof raw.version !== 'number') throw new Error('Ungültiger Spielstand');
   const def = defaultState(now);

@@ -8,6 +8,8 @@ import { h } from './dom';
 import { showModal } from './modal';
 import { toast } from './fx';
 import { spawnComet } from './comets';
+import { grantArtifact, randomArtifactOf, rollRarity } from '../core/fleet';
+import { addXp, xpForNext } from '../core/rank';
 
 export function initDebug(root: HTMLElement): void {
   const btn = h('button', { class: 'debug-btn', 'aria-label': 'Debug' }, '🐞');
@@ -64,6 +66,19 @@ function open(): void {
         compute(s(), Date.now(), G.calc);
       }),
       act('📅 Tägliche Belohnung zurücksetzen', () => { s().daily.last = ''; }),
+      act('🚀 Expeditionen sofort fertig', () => {
+        for (const m of s().fleet.missions) m.end = Date.now() - 1;
+      }),
+      act('⚗️ +1000 Exotische Materie', () => { s().fleet.em += 1000; s().fleet.emEarned += 1000; }),
+      act('🏺 Zufälliges Artefakt', () => {
+        const f = grantArtifact(s(), randomArtifactOf(rollRarity([40, 30, 20, 10], Math.random), Math.random));
+        toast('🏺', f.id, f.isNew ? 'neu' : 'Stufe ' + f.level);
+      }),
+      act('🏅 Prüfungsziel erreichen', () => {
+        if (s().challenge.active) earn(s(), Math.max(0, s().challenge.goal - s().runEarnings) * 1.01);
+      }),
+      act('⭐ +1 Rang-Level', () => addXp(s(), xpForNext(s().rank.level) - s().rank.xp)),
+      act('💥 3 Supernovas gutschreiben', () => { s().totalSupernovas += 3; }),
       { label: 'Schließen', cls: 'violet' },
     ],
   });

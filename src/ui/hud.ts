@@ -2,6 +2,7 @@
 import { PLANETS } from '../data/planets';
 import { fmt, fmtClock } from '../core/format';
 import { canClaimDaily } from '../core/meta';
+import { xpForNext } from '../core/rank';
 import { G, openTab, onTabChange, type TabId } from './ctx';
 import { h, setText, setClass, sphereEl, clear } from './dom';
 import { sfx, haptic } from '../audio/sfx';
@@ -15,6 +16,8 @@ let planetChip: HTMLElement;
 let planetName: HTMLElement;
 let planetMini: HTMLElement | null = null;
 let questBadge: HTMLElement;
+let rankLevel: HTMLElement;
+let rankRing: HTMLElement;
 let boostBox: HTMLElement;
 let shownCash = 0;
 let lastPlanet = -1;
@@ -28,11 +31,13 @@ export function buildHud(): HTMLElement {
   dustEl = h('span', { class: 'num' }, '0');
   planetName = h('span', null, '');
   questBadge = h('span', { class: 'badge' });
+  rankLevel = h('span', { class: 'num' }, '1');
+  rankRing = h('span', { class: 'rank-ring' }, '⭐');
   boostBox = h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' });
 
   planetChip = h('button', { class: 'chip', onClick: () => go('kosmos', 'planeten') }, planetName);
   dustChip = h('button', { class: 'chip dust', onClick: () => go('kosmos', 'nova') }, '✨', dustEl);
-  const questChip = h('button', { class: 'chip', onClick: () => go('mehr', 'missionen') }, '🎯', questBadge);
+  const questChip = h('button', { class: 'chip rank-chip', 'aria-label': 'Rang und Ziele', onClick: () => go('mehr', 'missionen') }, rankRing, rankLevel, questBadge);
   const gemChip = h('button', { class: 'chip gems', onClick: () => go('mehr', 'shop') }, '💎', gemsEl);
 
   return h(
@@ -65,6 +70,8 @@ export function updateHud(dt: number): void {
   const inc = G.calc.income;
   setText(incomeEl, inc > 0 ? `+${fmt(inc)} /s` : 'Tippe deine Anlagen an!');
   setText(gemsEl, fmt(s.gems, false));
+  setText(rankLevel, String(s.rank.level));
+  rankRing.style.setProperty('--p', String(Math.min(1, s.rank.xp / xpForNext(s.rank.level))));
   setText(dustEl, fmt(s.stardust, false));
   dustChip.style.display = s.stardustLifetime > 0 ? '' : 'none';
 
@@ -109,6 +116,7 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: 'anlagen', icon: '🏭', label: 'Anlagen' },
   { id: 'manager', icon: '👔', label: 'Manager' },
   { id: 'upgrades', icon: '⬆️', label: 'Upgrades' },
+  { id: 'flotte', icon: '🚀', label: 'Flotte' },
   { id: 'kosmos', icon: '🌟', label: 'Kosmos' },
   { id: 'mehr', icon: '☰', label: 'Mehr' },
 ];

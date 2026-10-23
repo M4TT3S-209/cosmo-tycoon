@@ -18,6 +18,9 @@ export interface GameEvents {
   structure: Record<string, never>;
   cantAfford: Record<string, never>;
   timewarp: { amount: number; hours: number };
+  rankUp: { level: number; gems: number };
+  challengeDone: { id: string; tier: number };
+  challengeFailed: { id: string };
 }
 
 export type CometKind = 'cash' | 'frenzy' | 'speed' | 'gems';
@@ -31,7 +34,14 @@ export function on<K extends keyof GameEvents>(type: K, fn: Handler<GameEvents[K
   list.push(fn as Handler<never>);
 }
 
+let muted = false;
+/** Während der Offline-Simulation keine Toasts/Sounds auslösen */
+export function muteEvents(on: boolean): void {
+  muted = on;
+}
+
 export function emit<K extends keyof GameEvents>(type: K, payload: GameEvents[K]): void {
+  if (muted) return;
   const list = handlers.get(type) as Handler<GameEvents[K]>[] | undefined;
   if (!list) return;
   for (const fn of list) fn(payload);

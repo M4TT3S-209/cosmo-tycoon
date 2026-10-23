@@ -3,7 +3,12 @@ import { BUILDINGS } from '../data/buildings';
 import { PLANETS, PLANET_MULT } from '../data/planets';
 import { on } from '../core/bus';
 import { fmt, fmtTime, setNotation } from '../core/format';
-import { canClaimDaily, claimDaily, nextDailyDay, type OfflineResult, applyOffline } from '../core/meta';
+import { canClaimDaily, claimDaily, nextDailyDay } from '../core/meta';
+import { earn } from '../core/actions';
+import type { OfflineSummary } from '../core/offline';
+import { readyMissions } from '../core/fleet';
+import { rankTitle } from '../core/rank';
+import { CHALLENGE_INDEX } from '../data/challenges';
 import { saveGame } from '../core/save';
 import { G, onTabChange, openTab, type TabId } from './ctx';
 import { clear, h, sphereEl } from './dom';
@@ -18,6 +23,7 @@ import { createManager, managerBadge } from './screens/manager';
 import { createUpgrades, upgradeBadge } from './screens/upgrades';
 import { createKosmos, kosmosBadge } from './screens/kosmos';
 import { createMehr, setReplaceHandler } from './screens/mehr';
+import { createFlotte, flotteBadge } from './screens/flotte';
 import type { Screen } from './screens/types';
 import { DAILY } from '../data/daily';
 import { sfx, haptic, setHaptics, setIgnoreMute, setMusic, setSound } from '../audio/sfx';
@@ -48,6 +54,7 @@ export function buildApp(root: HTMLElement): void {
     anlagen: createAnlagen(),
     manager: createManager(),
     upgrades: createUpgrades(),
+    flotte: createFlotte(),
     kosmos: createKosmos(),
     mehr: createMehr(),
   };
@@ -118,6 +125,7 @@ export function frameUi(dt: number): void {
     setTabBadge('manager', managerBadge());
     setTabBadge('upgrades', upgradeBadge());
     setTabBadge('kosmos', kosmosBadge());
+    setTabBadge('flotte', flotteBadge());
     setTabBadge('mehr', G.s.quests.some((q) => q.done) || canClaimDaily(G.s, G.now));
   }
 }
@@ -162,6 +170,27 @@ function wireEvents(): void {
     }, 900);
     openTab('anlagen');
   });
+  on('rankUp', ({ level, gems }) => {
+    sfx.achievement();
+    haptic();
+    const newTitle = (level - 1) % 10 === 0;
+    toast('⭐', newTitle ? `Neuer Rang: ${rankTitle(level)}!` : `Kommandanten-Level ${level}!`, `+${gems} 💎 · +1 % Einkommen`, true, 3200);
+  });
+  on('challengeDone', ({ id, tier }) => {
+    const c = CHALLENGE_INDEX[id];
+    sfx.milestone();
+    flash(false);
+    saveGame(G.s);
+    showModal({
+      hero: '🏅',
+      title: `Prüfung bestanden: ${c.name}!`,
+      body: [`Stufe ${tier} von 5 geschafft. Deine dauerhafte Belohnung: <b class="good-c">${c.reward(tier)}</b>.`, 'Dein Lauf geht ganz normal weiter – ohne Einschränkung.'],
+      actions: [{ label: '🎉 Weiter', cls: 'green' }],
+    });
+  });
+  on('challengeFailed', ({ id }) => {
+    toast('⏱️', `${CHALLENGE_INDEX[id].name}: Zeit abgelaufen`, 'Die Prüfung ist vorbei – dein Lauf geht normal weiter.', false, 4000);
+  });
   on('galaxy', ({ gain }) => {
     sfx.galaxy();
     flash(true);
@@ -195,19 +224,27 @@ function planetReveal(i: number): void {
 
 // ---- Willkommens-Dialoge -----------------------------------------------------
 
-export function offlineDialog(r: OfflineResult): void {
+/** Zusammenfassung der Offline-Zeit (das Geld ist bereits gutgeschrieben) */
+export function offlineDialog(r: OfflineSummary): void {
   const cost = 10;
+  const auto: string[] = [];
+  if (r.bought) auto.push(`🤖 ${fmt(r.bought, false)} Anlagen gekauft`);
+  if (r.upgrades) auto.push(`🛠️ ${r.upgrades} Upgrade${r.upgrades === 1 ? '' : 's'}`);
+  if (r.managers) auto.push(`👔 ${r.managers} Manager eingestellt`);
+  const ready = readyMissions(G.s, Date.now());
   showModal({
     hero: '🌙',
     title: 'Willkommen zurück!',
     body: [
       `Du warst <b>${fmtTime(r.seconds)}</b> weg. Deine Manager haben in der Zeit gearbeitet:`,
-      `<div class="big-num gold-c num" style="text-align:center;margin:10px 0">+${fmt(r.amount)}</div>`,
-      r.capped ? `<span class="hint">Offline-Speicher voll nach ${fmtTime(r.counted)} – erweitere ihn im Labor (🔋).</span>` : '',
+      `<div class="big-num gold-c num" style="text-align:center;margin:10px 0">+${fmt(r.earned)}</div>`,
+      auto.length ? `<div class="sub" style="text-align:center">${auto.join(' · ')}</div>` : '',
+      ready ? `<div class="sub" style="text-align:center">🚀 ${ready} Expedition${ready === 1 ? '' : 'en'} zurück – Beute wartet in der Flotte!</div>` : '',
+      r.capped ? `<span class="hint">Offline-Speicher voll nach ${fmtTime(r.counted)} – erweitere ihn im Labor (🔋) oder mit Artefakten.</span>` : '',
     ].filter(Boolean),
     actions: [
       {
-        label: `✨ ×2 kassieren (${cost} 💎)`,
+        label: `✨ Verdoppeln (${cost} 💎)`,
         cls: 'cyan',
         onClick: () => {
           if (G.s.gems < cost) {
@@ -216,16 +253,15 @@ export function offlineDialog(r: OfflineResult): void {
             return false;
           }
           G.s.gems -= cost;
-          applyOffline(G.s, r, 2);
+          earn(G.s, r.earned);
           sfx.claim();
           burst(window.innerWidth / 2, window.innerHeight * 0.6, '#ffd166', 40, 'coin', 1.4);
         },
       },
       {
-        label: '💰 Einsammeln',
+        label: '💰 Super!',
         cls: '',
         onClick: () => {
-          applyOffline(G.s, r, 1);
           sfx.claim();
           burst(window.innerWidth / 2, window.innerHeight * 0.6, '#ffd166', 24, 'coin', 1.2);
         },

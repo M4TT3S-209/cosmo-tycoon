@@ -3,7 +3,7 @@ import { newCalc, type Calc } from '../core/economy';
 import { defaultState, type GameState } from '../core/state';
 import { newTickOut, type TickOut } from '../core/tick';
 
-export type TabId = 'anlagen' | 'manager' | 'upgrades' | 'kosmos' | 'mehr';
+export type TabId = 'anlagen' | 'manager' | 'upgrades' | 'flotte' | 'kosmos' | 'mehr';
 
 export const G: {
   s: GameState;
@@ -23,7 +23,7 @@ export const G: {
   debug: false,
   dirty: true,
   tab: 'anlagen',
-  sub: { anlagen: '', manager: '', upgrades: '', kosmos: 'nova', mehr: 'missionen' },
+  sub: { anlagen: '', manager: '', upgrades: '', flotte: 'expeditionen', kosmos: 'nova', mehr: 'missionen' },
 };
 
 type TabListener = (tab: TabId) => void;

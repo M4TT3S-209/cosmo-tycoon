@@ -1408,3 +1408,133 @@ textarea.code {
     padding-right: max(16px, calc(50% - 280px));
   }
 }
+
+/* ===== Version 2: Rang, Flotte, Artefakte, Prüfungen ===== */
+.rank-chip {
+  padding-left: 6px;
+}
+.rank-ring {
+  --p: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  background:
+    radial-gradient(closest-side, #141a44 72%, transparent 74%),
+    conic-gradient(#fbbf24 calc(var(--p) * 360deg), rgba(255, 255, 255, 0.12) 0);
+}
+.tab {
+  font-size: 10px;
+}
+.tab .ti {
+  font-size: 21px;
+}
+.trait {
+  font-size: 12px;
+  font-weight: 800;
+  color: #fcd34d;
+}
+.trait-tag {
+  font-size: 11px;
+  font-weight: 900;
+  color: #1d1300;
+  background: linear-gradient(90deg, #fde68a, #fbbf24);
+  border-radius: 999px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.chal-banner {
+  width: 100%;
+  text-align: left;
+  border-color: rgba(251, 113, 133, 0.55);
+  box-shadow: 0 0 20px rgba(251, 113, 133, 0.25);
+  background: linear-gradient(180deg, rgba(90, 20, 50, 0.6), rgba(40, 12, 30, 0.6));
+}
+.stars {
+  color: #fbbf24;
+  letter-spacing: 1px;
+  font-size: 13px;
+}
+.card.dest {
+  width: 100%;
+  text-align: left;
+}
+.card.dest:active {
+  transform: scale(0.98);
+}
+
+.rar-common { --rc: #a5b1c9; }
+.rar-rare { --rc: #4fa8ff; }
+.rar-epic { --rc: #c084fc; }
+.rar-legendary { --rc: #ffc94d; }
+
+.art-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.art-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 4px 8px;
+  border-radius: 16px;
+  border: 1.5px solid color-mix(in srgb, var(--rc, #6a7299) 70%, transparent);
+  background: radial-gradient(circle at 50% 25%, color-mix(in srgb, var(--rc, #6a7299) 30%, transparent), rgba(18, 22, 56, 0.7) 70%);
+  min-height: 96px;
+  text-align: center;
+}
+.art-tile.rar-epic,
+.art-tile.rar-legendary {
+  box-shadow: 0 0 16px color-mix(in srgb, var(--rc) 45%, transparent);
+}
+.art-tile.rar-legendary .art-e {
+  animation: float 2.4s ease-in-out infinite;
+}
+.art-tile.unknown {
+  opacity: 0.45;
+  box-shadow: none;
+}
+.art-tile.empty {
+  border-style: dashed;
+  border-color: var(--line-2);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--dim);
+}
+.art-tile:active {
+  transform: scale(0.96);
+}
+.art-e {
+  font-size: 30px;
+  line-height: 1.1;
+}
+.art-n {
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.art-l {
+  font-size: 11px;
+  font-weight: 900;
+  color: var(--rc, var(--muted));
+}
+.loot-art {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1.5px solid var(--rc);
+  background: color-mix(in srgb, var(--rc) 14%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--rc) 35%, transparent);
+  animation: pop 0.4s ease;
+}
+.rar-tag {
+  background: color-mix(in srgb, var(--rc) 25%, transparent);
+  color: var(--rc);
+  border: 1px solid var(--rc);
+}

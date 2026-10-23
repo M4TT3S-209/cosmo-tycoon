@@ -5,11 +5,15 @@ import { LAB_INDEX } from '../data/lab';
 import { QUANTUM_INDEX } from '../data/quantum';
 import { emit, type CometKind } from './bus';
 import {
-  buildingCost, buyAmount, compute, empireCount, empireMultPer, gemMult, boostDurationMult,
-  lab, managerCost, milestoneCount, newCalc, type Calc,
+  artifactBonus, buildingBlocked, buildingCost, buyAmount, chalActive, compute, ctier, empireCount, empireMultPer,
+  gemMult, boostDurationMult, isManaged, lab, managerCost, milestoneCount, newCalc, planetTrait, type Calc,
 } from './economy';
 import type { Boost, BuyMode, GameState } from './state';
 import { fmt } from './format';
+import { XP, addXp } from './rank';
+import { timeWarp } from './offline';
+
+export { timeWarp };
 
 export function earn(s: GameState, amount: number): void {
   if (!(amount > 0)) return;
@@ -26,6 +30,7 @@ export function addGems(s: GameState, base: number, applyMult = true): number {
 }
 
 export function buyBuilding(s: GameState, i: number, mode: BuyMode): boolean {
+  if (buildingBlocked(s, i)) return false;
   const n = buyAmount(s, i, mode);
   const cost = buildingCost(s, i, n);
   if (n < 1 || cost > s.cash) {
@@ -41,9 +46,15 @@ export function buyBuilding(s: GameState, i: number, mode: BuyMode): boolean {
   s.stats.boughtBy[i] += n;
   emit('buy', { building: i, amount: n });
   const after = milestoneCount(s.buildings[i].owned);
-  if (after > before) emit('milestone', { building: i, level: s.buildings[i].owned });
+  if (after > before) {
+    addXp(s, XP.milestone * (after - before));
+    emit('milestone', { building: i, level: s.buildings[i].owned });
+  }
   const empAfter = empireCount(s);
-  if (empAfter > empBefore) emit('empire', { level: empAfter, mult: empireMultPer(s) });
+  if (empAfter > empBefore) {
+    addXp(s, XP.empire * (empAfter - empBefore));
+    emit('empire', { level: empAfter, mult: empireMultPer(s) });
+  }
   if (wasZero) emit('structure', {});
   return true;
 }
@@ -51,7 +62,7 @@ export function buyBuilding(s: GameState, i: number, mode: BuyMode): boolean {
 /** Startet einen manuellen Zyklus */
 export function tapBuilding(s: GameState, i: number): boolean {
   const b = s.buildings[i];
-  if (b.owned <= 0 || s.managers[i] || b.running) return false;
+  if (b.owned <= 0 || isManaged(s, i) || b.running || buildingBlocked(s, i)) return false;
   b.running = true;
   b.progress = 0;
   s.stats.taps++;
@@ -68,6 +79,7 @@ export function hireManager(s: GameState, i: number): boolean {
   s.cash -= cost;
   s.managers[i] = true;
   s.stats.managersHired++;
+  addXp(s, XP.manager);
   // laufender manueller Zyklus geht nahtlos in Automatik über
   s.buildings[i].running = false;
   emit('manager', { building: i });
@@ -77,7 +89,7 @@ export function hireManager(s: GameState, i: number): boolean {
 
 export function buyUpgrade(s: GameState, id: string): boolean {
   const u = UPGRADE_INDEX[id];
-  if (!u || s.upgrades[id]) return false;
+  if (!u || s.upgrades[id] || chalActive(s, 'noupg')) return false;
   if (s.cash < u.cost) {
     emit('cantAfford', {});
     return false;
@@ -85,6 +97,7 @@ export function buyUpgrade(s: GameState, id: string): boolean {
   s.cash -= u.cost;
   s.upgrades[id] = true;
   s.stats.upgradesBought++;
+  addXp(s, XP.upgrade);
   emit('upgrade', { id });
   emit('structure', {});
   return true;
@@ -92,6 +105,7 @@ export function buyUpgrade(s: GameState, id: string): boolean {
 
 /** Kauft alle bezahlbaren Upgrades, günstigste zuerst. Gibt die Anzahl zurück. */
 export function buyAllUpgrades(s: GameState): number {
+  if (chalActive(s, 'noupg')) return 0;
   let n = 0;
   for (const u of UPGRADES) {
     if (s.upgrades[u.id]) continue;
@@ -101,6 +115,7 @@ export function buyAllUpgrades(s: GameState): number {
     s.stats.upgradesBought++;
     n++;
   }
+  addXp(s, XP.upgrade * n);
   if (n) {
     emit('upgrade', { id: '' });
     emit('structure', {});
@@ -175,18 +190,6 @@ export function grantBoost(s: GameState, key: keyof typeof BOOST_DEFS, now: numb
 
 const scratch = newCalc();
 
-/** Zeitsprung: sofort Einkommen für `hours` Stunden (ohne temporäre Boosts) */
-export function timeWarp(s: GameState, hours: number, now: number): number {
-  const c = compute(s, now, scratch);
-  // Ohne Manager zählt wenigstens das halbe Potenzial, damit es sich nie leer anfühlt
-  const rate = Math.max(c.baseIncome, (c.potential / Math.max(1, c.incomeBoost * c.speedBoost)) * 0.5);
-  const amount = rate * hours * 3600;
-  earn(s, amount);
-  s.stats.timeWarps++;
-  emit('timewarp', { amount, hours });
-  return amount;
-}
-
 export interface ShopItem {
   id: string;
   name: string;
@@ -243,12 +246,15 @@ export function buyShop(s: GameState, id: string, now: number): boolean {
 // ---- Kometen ----------------------------------------------------------------
 
 export function nextCometDelay(s: GameState): number {
-  return (120 + Math.random() * 180) / (1 + 0.15 * lab(s, 'magnet'));
+  if (chalActive(s, 'storm')) return 20;
+  const freq = (1 + 0.15 * lab(s, 'magnet')) * (1 + artifactBonus(s).comet + (planetTrait(s)?.comet ?? 0));
+  return (120 + Math.random() * 180) / freq;
 }
 
 export function collectComet(s: GameState, now: number, rnd = Math.random()): { kind: CometKind; text: string } {
   s.stats.cometsTapped++;
-  const luck = 1 + 0.5 * lab(s, 'luck');
+  addXp(s, XP.comet);
+  const luck = (1 + 0.5 * lab(s, 'luck')) * (1 + artifactBonus(s).cometLuck + 0.5 * ctier(s, 'storm'));
   let kind: CometKind;
   let text: string;
   if (rnd < 0.42) {

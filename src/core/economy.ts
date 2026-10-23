@@ -4,6 +4,7 @@ import { MANAGERS } from '../data/managers';
 import { UPGRADES } from '../data/upgrades';
 import { PLANETS, PLANET_MULT } from '../data/planets';
 import { START_CASH } from '../data/lab';
+import { ARTIFACT_INDEX } from '../data/artifacts';
 import type { GameState, BuyMode } from './state';
 
 // ---- Balancing-Konstanten -------------------------------------------------
@@ -43,13 +44,79 @@ function dustCurveInverse(y: number): number {
   return xl + (y - yl) / DUST_TAIL_SLOPE;
 }
 
-export const QUANTUM_BASE = 1e5; // ✨ für 1 ⚛️ (Wurzel)
+export const QUANTUM_K = 7; // Quantenkerne genau am Galaxiekern
 export const STARDUST_BONUS = 0.02; // +2 % pro verdientem ✨
 export const ACHIEVEMENT_BONUS = 0.01; // +1 % pro Erfolg
 export const QUANTUM_PASSIVE = 0.25; // +25 % pro verdientem ⚛️
 
+export const RANK_BONUS = 0.01; // +1 % pro Kommandanten-Level
+
 export const lab = (s: GameState, id: string): number => s.lab[id] ?? 0;
 export const qlvl = (s: GameState, id: string): number => s.qperks[id] ?? 0;
+
+// ---- Prüfungen ---------------------------------------------------------------
+/** Läuft gerade die Prüfung `id`? */
+export const chalActive = (s: GameState, id: string): boolean => s.challenge.active === id;
+/** Abgeschlossene Stufen einer Prüfung */
+export const ctier = (s: GameState, id: string): number => s.challengeTiers[id] ?? 0;
+
+/** Arbeitet der Manager dieser Anlage gerade? (in „Ohne Manager“ nicht) */
+export function isManaged(s: GameState, i: number): boolean {
+  return s.managers[i] && !chalActive(s, 'nomgr');
+}
+
+/** In „Nur 5 Anlagen“ sind die Anlagen 6–10 gesperrt */
+export function buildingBlocked(s: GameState, i: number): boolean {
+  return i >= 5 && chalActive(s, 'five');
+}
+
+export function rankMult(s: GameState): number {
+  return 1 + RANK_BONUS * (s.rank.level - 1);
+}
+
+export function planetTrait(s: GameState) {
+  return PLANETS[s.planet]?.trait;
+}
+
+// ---- Artefakte (nur ausgerüstete wirken) --------------------------------------
+export interface ArtBonus {
+  income: number;
+  bld: number[];
+  offline: number;
+  offcap: number;
+  comet: number;
+  cometLuck: number;
+  gems: number;
+  dust: number;
+  discount: number;
+  speed: number;
+  expSpeed: number;
+  expLoot: number;
+  expSuccess: number;
+  em: number;
+}
+
+const artScratch: ArtBonus = {
+  income: 0, bld: Array(BUILDING_COUNT).fill(0), offline: 0, offcap: 0, comet: 0, cometLuck: 0,
+  gems: 0, dust: 0, discount: 0, speed: 0, expSpeed: 0, expLoot: 0, expSuccess: 0, em: 0,
+};
+
+/** Summe der Artefakt-Boni (Anteile, z. B. 0,3 = +30 %). Wiederverwendetes Objekt – sofort auslesen. */
+export function artifactBonus(s: GameState): ArtBonus {
+  const b = artScratch;
+  b.income = b.offline = b.offcap = b.comet = b.cometLuck = b.gems = b.dust = 0;
+  b.discount = b.speed = b.expSpeed = b.expLoot = b.expSuccess = b.em = 0;
+  b.bld.fill(0);
+  for (const id of s.equipped) {
+    const def = ARTIFACT_INDEX[id];
+    const lvl = s.artifacts[id]?.level ?? 0;
+    if (!def || lvl <= 0) continue;
+    const v = def.v * lvl;
+    if (def.kind === 'bld') b.bld[def.b ?? 0] += v;
+    else b[def.kind] += v;
+  }
+  return b;
+}
 
 export function milestoneCount(owned: number): number {
   let c = 0;
@@ -92,7 +159,9 @@ export function empireMultPer(s: GameState): number {
 }
 
 export function costDiscount(s: GameState): number {
-  return Math.pow(0.95, lab(s, 'discount'));
+  const art = Math.min(0.15, artifactBonus(s).discount);
+  const chal = Math.max(0.5, 1 - 0.03 * ctier(s, 'inflation'));
+  return Math.pow(0.95, lab(s, 'discount')) * (1 - art) * chal * (chalActive(s, 'inflation') ? 10 : 1);
 }
 
 /** Kosten für n Stück ab dem aktuellen Bestand */
@@ -131,9 +200,16 @@ export function managerCost(i: number): number {
   return MANAGERS[i].cost;
 }
 
+/** Jede neue Galaxie ist größer: Planeten brauchen dort mehr Sternenstaub */
+export const GALAXY_NEED_SCALE = 25;
+
+export function planetNeed(s: GameState, i: number): number {
+  return PLANETS[i].need * Math.pow(GALAXY_NEED_SCALE, s.galaxyJumps);
+}
+
 export function planetFor(s: GameState): number {
   let p = 0;
-  for (let i = 0; i < PLANETS.length; i++) if (s.stardustEarned >= PLANETS[i].need) p = i;
+  for (let i = 0; i < PLANETS.length; i++) if (s.stardustEarned >= planetNeed(s, i)) p = i;
   return Math.max(p, Math.min(PLANETS.length - 1, qlvl(s, 'qstart')));
 }
 
@@ -144,7 +220,7 @@ export function achievementCount(s: GameState): number {
 }
 
 export function gemMult(s: GameState): number {
-  return (1 + 0.25 * lab(s, 'gemfinder')) * (1 + 0.5 * qlvl(s, 'qgems'));
+  return (1 + 0.25 * lab(s, 'gemfinder')) * (1 + 0.5 * qlvl(s, 'qgems')) * (1 + artifactBonus(s).gems);
 }
 
 export function boostDurationMult(s: GameState): number {
@@ -152,11 +228,13 @@ export function boostDurationMult(s: GameState): number {
 }
 
 export function offlineCapSec(s: GameState): number {
-  return (2 + 2 * lab(s, 'offtime')) * 3600;
+  const extra = artifactBonus(s).offcap + 2 * Math.max(0, ctier(s, 'countdown') - 1);
+  return (2 + 2 * lab(s, 'offtime') + extra) * 3600;
 }
 
 export function offlineEfficiency(s: GameState): number {
-  return Math.min(1, 0.5 + 0.1 * lab(s, 'offeff'));
+  const base = Math.min(1, 0.5 + 0.1 * lab(s, 'offeff'));
+  return Math.min(1.5, base + artifactBonus(s).offline + (planetTrait(s)?.offline ?? 0));
 }
 
 export function startCash(s: GameState): number {
@@ -164,7 +242,8 @@ export function startCash(s: GameState): number {
 }
 
 export function dustMult(s: GameState): number {
-  return (1 + 0.15 * lab(s, 'snboost')) * Math.pow(1.5, qlvl(s, 'qdust'));
+  const art = 1 + artifactBonus(s).dust;
+  return (1 + 0.15 * lab(s, 'snboost')) * Math.pow(1.5, qlvl(s, 'qdust')) * art * (1 + 0.05 * ctier(s, 'dark'));
 }
 
 /** Sternenstaub, den eine Supernova jetzt bringen würde */
@@ -189,8 +268,12 @@ export function earningsForNextDust(s: GameState): number {
   return earningsForDust(s, pendingStardust(s) + 1);
 }
 
+/**
+ * Quantenkerne: am Galaxiekern ~QUANTUM_K Kerne, mehr, je weiter du darüber hinaus gehst.
+ * Relativ zum Bedarf der aktuellen Galaxie, damit die Kerne pro Sprung nicht explodieren.
+ */
 export function pendingQuantum(s: GameState): number {
-  return Math.floor(Math.sqrt(s.stardustEarned / QUANTUM_BASE));
+  return Math.floor(QUANTUM_K * Math.sqrt(s.stardustEarned / planetNeed(s, PLANETS.length - 1)));
 }
 
 export function canGalaxyJump(s: GameState): boolean {
@@ -207,21 +290,28 @@ export interface MultBreakdown {
   achievements: number;
   empire: number;
   upgradesAll: number;
+  rank: number;
+  artifacts: number;
+  challenges: number;
   total: number;
 }
 
 export function permanentMults(s: GameState): MultBreakdown {
   const labM = Math.pow(2, lab(s, 'income'));
-  const stardust = 1 + STARDUST_BONUS * s.stardustEarned;
+  const stardust = chalActive(s, 'dark') ? 1 : 1 + STARDUST_BONUS * s.stardustEarned;
   const planet = Math.pow(PLANET_MULT, s.planet);
   const quantum = Math.pow(3, qlvl(s, 'qincome')) * (1 + QUANTUM_PASSIVE * s.quantumEarned);
   const gems = Math.pow(2, s.gemPerm);
   const achievements = 1 + ACHIEVEMENT_BONUS * achievementCount(s);
   const empire = Math.pow(empireMultPer(s), empireCount(s));
+  const protocolBoost = 1 + 0.02 * ctier(s, 'noupg');
   let upgradesAll = 1;
-  for (const u of UPGRADES) if (u.target === -1 && s.upgrades[u.id]) upgradesAll *= u.mult;
-  const total = labM * stardust * planet * quantum * gems * achievements * empire * upgradesAll;
-  return { lab: labM, stardust, planet, quantum, gems, achievements, empire, upgradesAll, total };
+  for (const u of UPGRADES) if (u.target === -1 && s.upgrades[u.id]) upgradesAll *= u.mult * protocolBoost;
+  const rank = rankMult(s);
+  const artifacts = 1 + artifactBonus(s).income;
+  const challenges = (1 + 0.25 * ctier(s, 'nomgr')) * (chalActive(s, 'storm') ? 0.1 : 1);
+  const total = labM * stardust * planet * quantum * gems * achievements * empire * upgradesAll * rank * artifacts * challenges;
+  return { lab: labM, stardust, planet, quantum, gems, achievements, empire, upgradesAll, rank, artifacts, challenges, total };
 }
 
 export interface Calc {
@@ -254,7 +344,7 @@ export function newCalc(): Calc {
 }
 
 function permanentMultsEmpty(): MultBreakdown {
-  return { lab: 1, stardust: 1, planet: 1, quantum: 1, gems: 1, achievements: 1, empire: 1, upgradesAll: 1, total: 1 };
+  return { lab: 1, stardust: 1, planet: 1, quantum: 1, gems: 1, achievements: 1, empire: 1, upgradesAll: 1, rank: 1, artifacts: 1, challenges: 1, total: 1 };
 }
 
 const perBuildingUpg = new Array<number>(BUILDING_COUNT).fill(1);
@@ -272,21 +362,26 @@ export function compute(s: GameState, now: number, out: Calc): Calc {
   for (const u of UPGRADES) if (u.target >= 0 && s.upgrades[u.id]) perBuildingUpg[u.target] *= u.mult;
 
   const perm = permanentMults(s);
-  const warp = 1 + 0.25 * lab(s, 'warp');
+  const art = artifactBonus(s);
+  const trait = planetTrait(s);
+  const slow = chalActive(s, 'slow') ? 10 : 1;
+  const warp = ((1 + 0.25 * lab(s, 'warp')) * (1 + art.speed) * (1 + 0.2 * ctier(s, 'slow'))) / slow;
+  const highTier = Math.pow(1.5, ctier(s, 'five'));
   let income = 0;
   let potential = 0;
   for (let i = 0; i < BUILDING_COUNT; i++) {
     const d = BUILDINGS[i];
-    const owned = s.buildings[i].owned;
+    const owned = buildingBlocked(s, i) ? 0 : s.buildings[i].owned;
     const speed = warp * Math.pow(2, milestoneCount(owned));
-    const baseRev = d.baseRevenue * owned * perBuildingUpg[i] * perm.total;
+    const bldMult = (trait?.bld?.[i] ?? 1) * (1 + art.bld[i]) * (i >= 5 ? highTier : 1);
+    const baseRev = d.baseRevenue * owned * perBuildingUpg[i] * bldMult * perm.total;
     const t = d.baseTime / speed;
     out.time[i] = t / speedBoost;
     out.rev[i] = baseRev * incomeBoost;
     if (owned > 0) {
       const ps = baseRev / t;
       potential += ps;
-      if (s.managers[i]) income += ps;
+      if (isManaged(s, i)) income += ps;
     }
   }
   out.baseIncome = income;

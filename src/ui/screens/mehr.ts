@@ -1,10 +1,11 @@
 import { ACHIEVEMENTS } from '../../data/achievements';
 import { DAILY } from '../../data/daily';
 import { SHOP, buyShop } from '../../core/actions';
-import { ACHIEVEMENT_BONUS, permanentMults } from '../../core/economy';
+import { ACHIEVEMENT_BONUS, RANK_BONUS, permanentMults } from '../../core/economy';
+import { RANK_MAX, artifactSlots, hangarSlots, nextUnlock, rankTitle, xpForNext } from '../../core/rank';
 import { fmt, fmtInt, fmtMult, fmtTime, setNotation } from '../../core/format';
 import { canClaimDaily, claimDaily, claimQuest, nextDailyDay, questProgress, questText } from '../../core/meta';
-import { exportCode, importCode, saveGame, wipeSave } from '../../core/save';
+import { exportCode, hasPreUpdateBackup, importCode, loadPreUpdateBackup, saveGame, wipeSave } from '../../core/save';
 import { defaultState } from '../../core/state';
 import { G, isIOS, isStandalone } from '../ctx';
 import { h, setClass, setScale, setText, clear } from '../dom';
@@ -21,7 +22,7 @@ const SUBS = [
   { id: 'optionen', label: '⚙️' },
 ];
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '2.0.0';
 
 let onReplaceState: (() => void) | null = null;
 /** wird von app.ts gesetzt: nach Import/Reset alles neu starten */
@@ -66,7 +67,38 @@ export function createMehr(): Screen {
   }
 
   // ---- Missionen + tägliche Belohnung ----------------------------------------
+  function buildRank(): void {
+    const s = G.s;
+    const fill = h('i');
+    const xpText = h('div', { class: 'sub num' }, '');
+    const lvl = h('span', { class: 'num' }, '');
+    el.appendChild(h('div', { class: 'card glow rank-card', style: '--c:#fbbf24' },
+      h('div', { class: 'row' },
+        h('div', { class: 'icon-round', style: '--c:#fbbf24' }, '⭐'),
+        h('div', { class: 'col' },
+          h('div', { class: 'title' }, `${rankTitle(s.rank.level)} · Level `, lvl),
+          h('div', { class: 'progress', style: 'margin-top:4px' }, fill),
+          xpText,
+        ),
+      ),
+      h('div', { class: 'sub', style: 'margin-top:8px' },
+        `+${Math.round(RANK_BONUS * 100)} % Einkommen pro Level · Hangar ${hangarSlots(s)} · Artefakt-Plätze ${artifactSlots(s)}`,
+        h('br'),
+        nextUnlock(s) ?? 'Alle Freischaltungen erreicht!',
+      ),
+      h('div', { class: 'hint', style: 'margin-top:6px' }, 'XP gibt es für Meilensteine, Upgrades, Manager, Kometen, Missionen, Erfolge, Supernovas, Expeditionen und Prüfungen.'),
+    ));
+    updaters.push(() => {
+      const r = G.s.rank;
+      setText(lvl, String(r.level));
+      const need = xpForNext(r.level);
+      setScale(fill, r.level >= RANK_MAX ? 1 : r.xp / need);
+      setText(xpText, r.level >= RANK_MAX ? 'Maximaler Rang!' : `${fmt(r.xp, false)} / ${fmt(need, false)} XP bis Level ${r.level + 1}`);
+    });
+  }
+
   function buildQuests(): void {
+    buildRank();
     const s = G.s;
     const today = canClaimDaily(s, G.now);
     const day = nextDailyDay(s, G.now);
@@ -78,7 +110,7 @@ export function createMehr(): Screen {
       grid.appendChild(h('div', { class: 'daily-day' + (done ? ' done' : '') + (isToday ? ' today' : '') }, `Tag ${d}`, h('span', { class: 'e' }, done ? '✅' : r.emoji)));
     });
     const reward = DAILY[day - 1];
-    const claimBtn = h('button', { class: 'btn block' + (today ? '' : ' off') }, today ? `🎁 Tag ${day} abholen: ${reward.label}` : '✅ Heute schon abgeholt – komm morgen wieder!');
+    const claimBtn = h('button', { class: 'btn block' + (today ? '' : ' off'), style: 'white-space:normal;height:auto;min-height:44px;padding:8px 12px' }, today ? `🎁 Tag ${day} abholen: ${reward.label}` : '✅ Heute schon abgeholt – komm morgen wieder!');
     claimBtn.addEventListener('click', () => {
       if (!canClaimDaily(G.s, Date.now())) return;
       const r = claimDaily(G.s, Date.now());
@@ -235,6 +267,11 @@ export function createMehr(): Screen {
     add('Supernovas', String(s.totalSupernovas));
     add('Schnellste Supernova', s.stats.fastestSupernova ? fmtTime(s.stats.fastestSupernova) : '–');
     add('Galaxie-Sprünge', String(s.galaxyJumps));
+    add('Kommandanten-Level', String(s.rank.level));
+    add('Expeditionen', () => fmtInt(G.s.fleet.expeditions));
+    add('Exotische Materie gesammelt', () => fmt(G.s.fleet.emEarned, false));
+    add('Artefakte gefunden', String(Object.keys(s.artifacts).length));
+    add('Prüfungs-Stufen', String(s.stats.challengesDone));
     add('Kristalle verdient', () => fmtInt(G.s.stats.gemsEarned));
     add('Spieltage', String(s.stats.daysPlayed));
     el.appendChild(h('div', { class: 'card' }, h('div', { class: 'title', style: 'margin-bottom:8px' }, '📊 Statistik'), kv));
@@ -253,6 +290,9 @@ export function createMehr(): Screen {
     row('🏆 Erfolge', pm.achievements);
     row('🏛️ Imperium-Meilensteine', pm.empire);
     row('🌐 Imperium-Protokolle', pm.upgradesAll);
+    row('⭐ Kommandanten-Rang', pm.rank);
+    row('🏺 Artefakte', pm.artifacts);
+    row('🏅 Prüfungen', pm.challenges);
     mk.append(h('span', { style: 'color:var(--text);font-weight:800' }, 'Gesamt'), h('span', { class: 'num gold-c' }, fmtMult(pm.total)));
     el.appendChild(h('div', { class: 'card' }, h('div', { class: 'title', style: 'margin-bottom:8px' }, '✖️ Multiplikatoren'), mk));
   }
@@ -312,6 +352,16 @@ export function createMehr(): Screen {
         h('div', { class: 'sub', style: 'margin-top:4px' }, isIOS
           ? 'Tippe in Safari unten auf „Teilen“ (□↑) und dann auf „Zum Home-Bildschirm“. Danach startet Cosmo Tycoon im Vollbild wie eine echte App – auch offline.'
           : 'Öffne die Seite auf dem iPhone in Safari, tippe auf „Teilen“ und dann „Zum Home-Bildschirm“.'),
+      ));
+    }
+
+    if (hasPreUpdateBackup()) {
+      const restore = h('button', { class: 'btn small ghost' }, '🛟 Stand vor dem Update laden');
+      restore.addEventListener('click', () => restoreDialog());
+      el.appendChild(h('div', { class: 'card' },
+        h('div', { class: 'title' }, '🛟 Sicherung vor dem Update'),
+        h('div', { class: 'sub', style: 'margin:4px 0 10px' }, 'Vor dem Update auf Version 2 wurde dein alter Spielstand unverändert gesichert. Nur für den Notfall – normalerweise brauchst du das nicht.'),
+        restore,
       ));
     }
 
@@ -383,6 +433,32 @@ function importDialog(): void {
             sfx.error();
             return false;
           }
+        },
+      },
+      { label: 'Abbrechen', cls: 'ghost' },
+    ],
+  });
+}
+
+function restoreDialog(): void {
+  showModal({
+    hero: '🛟',
+    title: 'Alten Stand laden?',
+    body: ['Dein aktueller Fortschritt seit dem Update wird durch die Sicherung ersetzt. Tipp: Exportiere vorher deinen aktuellen Stand.'],
+    actions: [
+      {
+        label: '🛟 Sicherung laden',
+        cls: 'violet',
+        onClick: () => {
+          const st = loadPreUpdateBackup();
+          if (!st) {
+            toast('⚠️', 'Keine Sicherung gefunden');
+            return;
+          }
+          G.s = st;
+          saveGame(G.s);
+          onReplaceState?.();
+          toast('✅', 'Sicherung geladen');
         },
       },
       { label: 'Abbrechen', cls: 'ghost' },

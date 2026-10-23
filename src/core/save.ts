@@ -1,8 +1,11 @@
 // Speichern/Laden in localStorage, Backup-Slot, Export-Code
-import { defaultState, hydrate, type GameState } from './state';
+import { SAVE_VERSION, defaultState, hydrate, rawVersion, type GameState } from './state';
+import { migrate } from './migrate';
 
 const KEY = 'cosmo-tycoon:save';
 const BACKUP = 'cosmo-tycoon:backup';
+/** Unveränderte Kopie des letzten v1-Spielstands vor dem Update auf v2 – wird nie überschrieben */
+export const PRE_UPDATE_BACKUP = 'cosmo-tycoon:backup-v1';
 const PREFIX = 'CT1:';
 
 function storage(): Storage | null {
@@ -18,7 +21,11 @@ export function serialize(s: GameState): string {
 }
 
 export function deserialize(json: string, now = Date.now()): GameState {
-  return hydrate(JSON.parse(json), now);
+  const raw = JSON.parse(json);
+  const from = rawVersion(raw);
+  const s = hydrate(raw, now);
+  migrate(s, from);
+  return s;
 }
 
 let lastWritten = '';
@@ -50,6 +57,10 @@ export function loadGame(now = Date.now()): LoadResult {
       try {
         const raw = st.getItem(key);
         if (!raw) continue;
+        // vor der ersten Migration eine unveränderte Kopie des alten Stands ablegen
+        if (rawVersion(JSON.parse(raw)) < SAVE_VERSION && !st.getItem(PRE_UPDATE_BACKUP)) {
+          st.setItem(PRE_UPDATE_BACKUP, raw);
+        }
         const state = deserialize(raw, now);
         lastWritten = raw;
         return { state, fresh: false, restoredFromBackup: backup };
@@ -59,6 +70,22 @@ export function loadGame(now = Date.now()): LoadResult {
     }
   }
   return { state: defaultState(now), fresh: true, restoredFromBackup: false };
+}
+
+/** Gibt es die unveränderte Sicherung von vor dem Update? */
+export function hasPreUpdateBackup(): boolean {
+  try {
+    return !!storage()?.getItem(PRE_UPDATE_BACKUP);
+  } catch {
+    return false;
+  }
+}
+
+/** Lädt die Sicherung von vor dem Update (wird dabei erneut migriert, die Sicherung bleibt bestehen) */
+export function loadPreUpdateBackup(now = Date.now()): GameState | null {
+  const raw = storage()?.getItem(PRE_UPDATE_BACKUP);
+  if (!raw) return null;
+  return deserialize(raw, now);
 }
 
 export function wipeSave(): void {

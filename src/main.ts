@@ -1,12 +1,13 @@
 import './styles/main.css';
 import { registerSW } from 'virtual:pwa-register';
-import { computeOffline, ensureQuests, trackDay } from './core/meta';
+import { ensureQuests, trackDay } from './core/meta';
+import { simulateOffline } from './core/offline';
 import { loadGame, saveGame } from './core/save';
 import { tick } from './core/tick';
 import { compute } from './core/economy';
 import { G } from './ui/ctx';
 import { buildApp, dailyDialog, frameUi, offlineDialog } from './ui/app';
-import { showIntro, tutorialActive } from './ui/tutorial';
+import { showIntro, showWhatsNew, tutorialActive } from './ui/tutorial';
 import { toast } from './ui/fx';
 import { installAudioUnlock, resumeAudio, suspendAudio } from './audio/sfx';
 import { initDebug } from './ui/debug';
@@ -35,11 +36,13 @@ function boot(): void {
   if (res.restoredFromBackup) toast('🛟', 'Spielstand wiederhergestellt', 'Der letzte Speicherstand war beschädigt – Backup geladen.');
 
   if (res.fresh || G.s.tutorial.step === 0) {
+    G.s.tutorial.flags.v2intro = true;
     showIntro(() => {
       G.s.tutorial.step = 1;
       saveGame(G.s);
     });
   } else {
+    showWhatsNew();
     checkOffline();
     if (!tutorialActive()) dailyDialog();
   }
@@ -81,8 +84,9 @@ function checkOffline(): void {
   G.s.lastActive = now;
   lastTs = performance.now();
   if (away < OFFLINE_MIN_SEC) return;
-  const r = computeOffline(G.s, away, now);
-  if (r.amount > 0) offlineDialog(r);
+  const r = simulateOffline(G.s, away, now);
+  saveGame(G.s);
+  if (r.earned > 0 || r.bought > 0) offlineDialog(r);
 }
 
 let lastTs = performance.now();

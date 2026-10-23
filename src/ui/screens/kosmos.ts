@@ -3,10 +3,12 @@ import { PLANETS, PLANET_MULT } from '../../data/planets';
 import { QUANTUM_PERKS } from '../../data/quantum';
 import { buyLab, buyQuantum, labAvailable } from '../../core/actions';
 import {
-  STARDUST_BONUS, QUANTUM_PASSIVE, canGalaxyJump, earningsForDust, earningsForNextDust, lab, pendingQuantum,
-  pendingStardust, permanentMults, qlvl, QUANTUM_BASE,
+  STARDUST_BONUS, QUANTUM_PASSIVE, QUANTUM_K, canGalaxyJump, ctier, earningsForDust, earningsForNextDust, lab, pendingQuantum,
+  pendingStardust, permanentMults, planetNeed, qlvl,
 } from '../../core/economy';
-import { fmt, fmtMult, fmtPct } from '../../core/format';
+import { fmt, fmtClock, fmtMult, fmtPct } from '../../core/format';
+import { CHALLENGES, CHALLENGE_INDEX, CHALLENGE_TIERS, CHALLENGE_UNLOCK_SUPERNOVAS } from '../../data/challenges';
+import { abortChallenge, challengeGoal, challengesUnlocked, countdownLeft, startChallenge } from '../../core/challenges';
 import { galaxyJump, supernova } from '../../core/prestige';
 import { G } from '../ctx';
 import { h, setClass, setScale, setText, clear, sphereEl } from '../dom';
@@ -16,9 +18,10 @@ import { sfx, haptic } from '../../audio/sfx';
 import type { Screen } from './types';
 
 const SUBS = [
-  { id: 'nova', label: '💥 Supernova' },
+  { id: 'nova', label: '💥 Nova' },
   { id: 'labor', label: '🧪 Labor' },
-  { id: 'planeten', label: '🪐 Planeten' },
+  { id: 'planeten', label: '🪐 Welten' },
+  { id: 'pruefung', label: '🏅 Prüfung' },
   { id: 'galaxie', label: '⚛️ Galaxie' },
 ];
 
@@ -46,6 +49,7 @@ export function createKosmos(): Screen {
     if (sub === 'labor') buildLab();
     else if (sub === 'planeten') buildPlanets();
     else if (sub === 'galaxie') buildGalaxy();
+    else if (sub === 'pruefung') buildChallenges();
     else buildNova();
   }
 
@@ -118,7 +122,7 @@ export function createKosmos(): Screen {
       setClass(btn, 'off', p < 1);
       const after = st.stardustEarned + p;
       let txt = p > 0 ? `Bonus danach: +${fmtPct(STARDUST_BONUS * after)} statt +${fmtPct(STARDUST_BONUS * st.stardustEarned)}` : 'Verdiene mehr Geld, um Sternenstaub zu sammeln.';
-      if (next && after >= next.need && p > 0) txt += ` · 🪐 Reise zu: ${next.name}!`;
+      if (next && after >= planetNeed(st, st.planet + 1) && p > 0) txt += ` · 🪐 Reise zu: ${next.name}!`;
       setText(preview, txt);
       setText(bonus, '+' + fmtPct(STARDUST_BONUS * st.stardustEarned));
     });
@@ -127,11 +131,13 @@ export function createKosmos(): Screen {
   function confirmSupernova(p: number): void {
     const s = G.s;
     const next = PLANETS[s.planet + 1];
-    const travels = next && s.stardustEarned + p >= next.need;
+    const travels = next && s.stardustEarned + p >= planetNeed(s, s.planet + 1);
+    const chal = s.challenge.active ? CHALLENGE_INDEX[s.challenge.active] : null;
     showModal({
       hero: '💥',
       title: 'Supernova auslösen?',
       body: [
+        chal ? `⚠️ Deine laufende Prüfung <b>${chal.emoji} ${chal.name}</b> wird damit abgebrochen.` : '',
         `Dein Imperium explodiert und du erhältst <b class="dust-c">+${fmt(p, false)} ✨ Sternenstaub</b>.`,
         `Dein Dauer-Bonus steigt auf <b>+${fmtPct(STARDUST_BONUS * (s.stardustEarned + p))}</b> Einkommen.`,
         travels ? `🪐 Du reist weiter zum <b>${next.name}</b> (×${String(PLANET_MULT).replace('.', ',')} Einkommen)!` : '',
@@ -212,7 +218,8 @@ export function createKosmos(): Screen {
       h('div', { class: 'card' },
         h('div', { class: 'title' }, '🪐 Deine Reise durch die Galaxie'),
         h('div', { class: 'sub', style: 'margin-top:4px' },
-          `Neue Planeten erreichst du bei einer Supernova, sobald du genug Sternenstaub verdient hast. Jeder Planet gibt dauerhaft ×${String(PLANET_MULT).replace('.', ',')} Einkommen. Aktuell: ${fmtMult(pm.planet)}.`),
+          `Neue Planeten erreichst du bei einer Supernova, sobald du genug Sternenstaub verdient hast. Jeder Planet gibt dauerhaft ×${String(PLANET_MULT).replace('.', ',')} Einkommen (aktuell ${fmtMult(pm.planet)}) – und solange du dort bist, einen eigenen Bonus.`),
+        s.galaxyJumps > 0 ? h('div', { class: 'hint', style: 'margin-top:6px' }, `Galaxie ${s.galaxyJumps + 1}: Diese Galaxie ist größer – Planeten brauchen mehr Sternenstaub.`) : null,
       ),
     );
     PLANETS.forEach((p, i) => {
@@ -225,7 +232,8 @@ export function createKosmos(): Screen {
           h('div', { class: 'col' },
             h('div', { class: 'title' }, `${p.emoji} ${p.name}`),
             h('div', { class: 'sub' }, p.desc),
-            h('div', { class: 'sub num' }, i === 0 ? 'Startpunkt' : `Benötigt ${fmt(p.need, false)} ✨ insgesamt`),
+            p.trait ? h('div', { class: 'trait' }, `🪐 Hier: ${p.trait.text}`) : null,
+            h('div', { class: 'sub num' }, i === 0 ? 'Startpunkt' : `Benötigt ${fmt(planetNeed(s, i), false)} ✨ insgesamt`),
           ),
           h('span', { class: 'tag' + (reached ? ' on' : '') }, current ? 'HIER' : reached ? '✓' : '🔒'),
         ),
@@ -246,9 +254,9 @@ export function createKosmos(): Screen {
           h('div', { style: 'font-size:60px' }, '⚛️'),
           h('div', { class: 'title' }, 'Galaxie-Sprung'),
           h('div', { class: 'sub', style: 'margin-top:6px' },
-            `Erreiche den ${last.emoji} ${last.name} (${fmt(last.need, false)} ✨ insgesamt), um in eine neue Galaxie zu springen und mächtige Quantenkerne zu erhalten.`),
-          h('div', { class: 'progress', style: 'margin-top:12px' }, h('i', { style: `transform:scaleX(${Math.min(1, Math.log10(1 + s.stardustEarned) / Math.log10(1 + last.need))})` })),
-          h('div', { class: 'sub num', style: 'margin-top:6px' }, `${fmt(s.stardustEarned, false)} / ${fmt(last.need, false)} ✨`),
+            `Erreiche den ${last.emoji} ${last.name} (${fmt(planetNeed(s, PLANETS.length - 1), false)} ✨ insgesamt), um in eine neue Galaxie zu springen und mächtige Quantenkerne zu erhalten.`),
+          h('div', { class: 'progress', style: 'margin-top:12px' }, h('i', { style: `transform:scaleX(${Math.min(1, Math.log10(1 + s.stardustEarned) / Math.log10(1 + planetNeed(s, PLANETS.length - 1)))})` })),
+          h('div', { class: 'sub num', style: 'margin-top:6px' }, `${fmt(s.stardustEarned, false)} / ${fmt(planetNeed(s, PLANETS.length - 1), false)} ✨`),
         ),
       );
       return;
@@ -281,7 +289,7 @@ export function createKosmos(): Screen {
         h('div', { class: 'sub' }, 'Quantenkerne beim Sprung'),
         pend,
         h('div', { class: 'sub num', style: 'margin-top:6px' },
-          `Mehr Sternenstaub = mehr Kerne (Wurzel aus ✨ / ${fmt(QUANTUM_BASE, false)})`),
+          `Am Galaxiekern ${QUANTUM_K} Kerne – je weiter du darüber hinaus Sternenstaub sammelst, desto mehr.`),
         btn,
       ),
     );
@@ -333,6 +341,109 @@ export function createKosmos(): Screen {
         ),
       );
     }
+  }
+
+  // ---- Prüfungen ------------------------------------------------------------
+  function buildChallenges(): void {
+    const s = G.s;
+    if (!challengesUnlocked(s)) {
+      el.appendChild(h('div', { class: 'card nova-hero locked' },
+        h('div', { style: 'font-size:60px' }, '🏅'),
+        h('div', { class: 'title' }, 'Prüfungen'),
+        h('div', { class: 'sub', style: 'margin-top:6px' }, `Nach ${CHALLENGE_UNLOCK_SUPERNOVAS} Supernovas kannst du Sonderläufe mit Einschränkungen spielen – und dafür mächtige dauerhafte Belohnungen verdienen. (${s.totalSupernovas}/${CHALLENGE_UNLOCK_SUPERNOVAS})`),
+      ));
+      return;
+    }
+    const done = CHALLENGES.reduce((a, c) => a + ctier(s, c.id), 0);
+    el.appendChild(h('div', { class: 'card' },
+      h('div', { class: 'title' }, `🏅 Prüfungen (${done}/${CHALLENGES.length * CHALLENGE_TIERS} Stufen)`),
+      h('div', { class: 'sub', style: 'margin-top:4px' }, 'Starte einen Sonderlauf mit Einschränkung. Erreichst du das Einnahmen-Ziel, bekommst du eine dauerhafte Belohnung – danach läuft dein Lauf ganz normal weiter. Tipp: direkt nach einer Supernova starten.'),
+    ));
+    const active = s.challenge.active ? CHALLENGE_INDEX[s.challenge.active] : null;
+    if (active) {
+      const fill = h('i');
+      const txt = h('div', { class: 'sub num' }, '');
+      const abort = h('button', { class: 'btn small red' }, 'Abbrechen');
+      abort.addEventListener('click', () => {
+        showModal({
+          hero: active.emoji,
+          title: 'Prüfung abbrechen?',
+          body: 'Dein aktueller Lauf wird zurückgesetzt (ohne Sternenstaub). Die Prüfung kannst du jederzeit neu starten.',
+          actions: [
+            { label: 'Ja, abbrechen', cls: 'red', onClick: () => void abortChallenge(G.s) },
+            { label: 'Weiter versuchen', cls: 'ghost' },
+          ],
+        });
+      });
+      el.appendChild(h('div', { class: 'card glow', style: '--c:#fb7185' },
+        h('div', { class: 'row' },
+          h('div', { class: 'icon-round', style: '--c:#fb7185' }, active.emoji),
+          h('div', { class: 'col' },
+            h('div', { class: 'title' }, `Läuft: ${active.name} – Stufe ${ctier(s, active.id) + 1}`),
+            h('div', { class: 'sub' }, active.rule),
+            h('div', { class: 'progress', style: 'margin-top:4px' }, fill),
+            txt,
+          ),
+          abort,
+        ),
+      ));
+      updaters.push(() => {
+        const st = G.s;
+        if (!st.challenge.active) return;
+        setScale(fill, Math.log10(1 + st.runEarnings) / Math.log10(1 + st.challenge.goal));
+        let t = `${fmt(st.runEarnings)} / ${fmt(st.challenge.goal)}`;
+        if (st.challenge.active === 'countdown') t += ` · ⏱ ${fmtClock(countdownLeft(st))}`;
+        setText(txt, t);
+      });
+    }
+    for (const c of CHALLENGES) {
+      const tier = ctier(s, c.id);
+      const goal = challengeGoal(s, c.id);
+      const stars = '★'.repeat(tier) + '☆'.repeat(CHALLENGE_TIERS - tier);
+      let right: HTMLElement;
+      if (goal === null) right = h('span', { class: 'owned-tag' }, 'MEISTER');
+      else if (active) right = h('span', { class: 'tag' }, active.id === c.id ? 'LÄUFT' : '–');
+      else {
+        right = h('button', { class: 'btn small violet' }, 'Start');
+        right.addEventListener('click', () => confirmChallenge(c.id));
+      }
+      el.appendChild(h('div', { class: 'card' + (tier > 0 ? ' glow' : ''), style: '--c:#fbbf24' },
+        h('div', { class: 'row' },
+          h('div', { class: 'icon-round', style: '--c:#fbbf24' }, c.emoji),
+          h('div', { class: 'col' },
+            h('div', { class: 'title' }, `${c.name} `, h('span', { class: 'stars' }, stars)),
+            h('div', { class: 'sub' }, c.rule),
+            h('div', { class: 'sub num' }, goal === null ? `Alle Stufen geschafft: ${c.reward(tier)}` : `Ziel Stufe ${tier + 1}: ${fmt(goal)} verdienen · Belohnung: ${c.reward(tier + 1)}`),
+          ),
+          right,
+        ),
+      ));
+    }
+  }
+
+  function confirmChallenge(id: string): void {
+    const c = CHALLENGE_INDEX[id];
+    const p = pendingStardust(G.s);
+    const goal = challengeGoal(G.s, id);
+    showModal({
+      hero: c.emoji,
+      title: `Prüfung: ${c.name}`,
+      body: [
+        `<b>Regel:</b> ${c.rule}`,
+        `<b>Ziel:</b> ${fmt(goal ?? 0)} in diesem Lauf verdienen.`,
+        `<b>Belohnung:</b> ${c.reward(ctier(G.s, id) + 1)} – für immer.`,
+        p >= 1
+          ? `Dein Lauf wird zurückgesetzt. Du hast gerade <b class="dust-c">${fmt(p, false)} ✨</b> bereit – sichere sie vorher mit einer Supernova!`
+          : 'Dein aktueller Lauf wird zurückgesetzt.',
+      ],
+      actions: [
+        ...(p >= 1
+          ? [{ label: `💥 Supernova (+${fmt(p, false)} ✨) & starten`, cls: 'violet', onClick: () => { supernova(G.s); startChallenge(G.s, id); G.sub.kosmos = 'pruefung'; } }]
+          : []),
+        { label: p >= 1 ? 'Ohne Supernova starten' : '🏅 Prüfung starten', cls: p >= 1 ? 'ghost' : 'violet', onClick: () => void startChallenge(G.s, id) },
+        { label: 'Abbrechen', cls: 'ghost' },
+      ],
+    });
   }
 
   function update(): void {
