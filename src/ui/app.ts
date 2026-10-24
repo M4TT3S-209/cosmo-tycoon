@@ -182,6 +182,9 @@ function wireEvents(): void {
       actions: [{ label: '🎉 Weiter', cls: 'green' }],
     });
   });
+  on('numberCap', () => {
+    toast('🛡️', 'Zahlen-Schutz', 'Dein Geld hat die größte Zahl erreicht, mit der das Spiel rechnen kann (1e300). Supernova und Galaxie-Sprung bringen dich weiter.', true, 6000);
+  });
   on('challengeFailed', ({ id }) => {
     toast('⏱️', `${CHALLENGE_INDEX[id].name}: Zeit abgelaufen`, 'Die Prüfung ist vorbei – dein Lauf geht normal weiter.', false, 4000);
   });

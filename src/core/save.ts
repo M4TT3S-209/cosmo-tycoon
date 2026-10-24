@@ -1,6 +1,7 @@
 // Speichern/Laden in localStorage, Backup-Slot, Export-Code
 import { SAVE_VERSION, defaultState, hydrate, rawVersion, type GameState } from './state';
 import { migrate } from './migrate';
+import { repairNumbers } from './safe';
 
 const KEY = 'cosmo-tycoon:save';
 const BACKUP = 'cosmo-tycoon:backup';
@@ -16,7 +17,13 @@ function storage(): Storage | null {
   }
 }
 
-export function serialize(s: GameState): string {
+/**
+ * Spielstand als JSON. Zahlen-Schutz: ±∞ wird zu ±1e300, NaN zum zuletzt gespeicherten Wert
+ * (sonst 0) – JSON würde beides als null schreiben, und beim Laden würde daraus der Standardwert.
+ */
+export function serialize(s: GameState, previous = ''): string {
+  const repaired = repairNumbers(s, previous ? () => JSON.parse(previous) : undefined);
+  if (repaired > 0) console.warn(`Zahlen-Schutz: ${repaired} Wert(e) im Spielstand repariert`);
   return JSON.stringify(s);
 }
 
@@ -34,7 +41,7 @@ export function saveGame(s: GameState): boolean {
   const st = storage();
   if (!st) return false;
   try {
-    const json = serialize(s);
+    const json = serialize(s, lastWritten);
     if (lastWritten && lastWritten !== json) st.setItem(BACKUP, lastWritten);
     st.setItem(KEY, json);
     lastWritten = json;
@@ -126,7 +133,7 @@ function fromBase64(b64: string): string {
 }
 
 export function exportCode(s: GameState): string {
-  const json = serialize(s);
+  const json = serialize(s, lastWritten);
   return PREFIX + checksum(json) + ':' + toBase64(json);
 }
 

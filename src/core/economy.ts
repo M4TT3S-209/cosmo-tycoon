@@ -5,6 +5,7 @@ import { UPGRADES } from '../data/upgrades';
 import { PLANETS, PLANET_MULT } from '../data/planets';
 import { START_CASH } from '../data/lab';
 import { ARTIFACT_INDEX } from '../data/artifacts';
+import { cap } from './safe';
 import type { GameState, BuyMode } from './state';
 
 // ---- Balancing-Konstanten -------------------------------------------------
@@ -126,7 +127,7 @@ export function milestoneCount(owned: number): number {
 
 /** Ertrag/s einer Anlage mit `owned` Stück, aus dem Stück-Ertrag `unit` (siehe Calc.unit) */
 export function rateAt(unit: number, owned: number): number {
-  return owned > 0 ? unit * owned * Math.pow(2, milestoneCount(owned)) : 0;
+  return owned > 0 ? cap(unit * owned * Math.pow(2, milestoneCount(owned))) : 0;
 }
 
 export function nextMilestone(owned: number): number | null {
@@ -181,13 +182,14 @@ export function buildingCost(s: GameState, i: number, n: number): number {
 export function maxAffordable(s: GameState, i: number, cash: number): number {
   const d = BUILDINGS[i];
   const r = d.costMult;
+  cash = cap(cash); // bei „unendlich“ würde die Korrektur-Schleife unten nie enden
   const first = d.baseCost * Math.pow(r, s.buildings[i].owned) * costDiscount(s);
-  if (cash < first) return 0;
+  if (!(cash >= first)) return 0;
   const n = Math.floor(Math.log((cash * (r - 1)) / first + 1) / Math.log(r));
   // Gleitkomma-Korrektur
-  let m = Math.max(0, n);
+  let m = Number.isFinite(n) ? Math.max(0, n) : 0;
   while (m > 0 && buildingCost(s, i, m) > cash) m--;
-  while (buildingCost(s, i, m + 1) <= cash) m++;
+  for (let k = 0; k < 100 && buildingCost(s, i, m + 1) <= cash; k++) m++;
   return m;
 }
 
@@ -258,14 +260,14 @@ export function pendingStardust(s: GameState): number {
 
 /** ungerundeter Wert (für Fortschrittsanzeige) */
 export function stardustExact(s: GameState): number {
-  if (s.runEarnings < 1) return 0;
-  return Math.pow(10, dustCurve(Math.log10(s.runEarnings))) * dustMult(s);
+  if (!(s.runEarnings >= 1)) return 0;
+  return cap(Math.pow(10, dustCurve(Math.log10(s.runEarnings))) * dustMult(s));
 }
 
 /** Lauf-Einnahmen, die für `p` ✨ nötig sind */
 export function earningsForDust(s: GameState, p: number): number {
   if (p <= 0) return 0;
-  return Math.pow(10, dustCurveInverse(Math.log10(p / dustMult(s))));
+  return cap(Math.pow(10, dustCurveInverse(Math.log10(p / dustMult(s)))));
 }
 
 /** Lauf-Einnahmen, die für den nächsten ✨ nötig sind */
@@ -278,7 +280,7 @@ export function earningsForNextDust(s: GameState): number {
  * Relativ zum Bedarf der aktuellen Galaxie, damit die Kerne pro Sprung nicht explodieren.
  */
 export function pendingQuantum(s: GameState): number {
-  return Math.floor(QUANTUM_K * Math.sqrt(s.stardustEarned / planetNeed(s, PLANETS.length - 1)));
+  return Math.floor(cap(QUANTUM_K * Math.sqrt(s.stardustEarned / planetNeed(s, PLANETS.length - 1))));
 }
 
 export function canGalaxyJump(s: GameState): boolean {
@@ -315,7 +317,7 @@ export function permanentMults(s: GameState): MultBreakdown {
   const rank = rankMult(s);
   const artifacts = 1 + artifactBonus(s).income;
   const challenges = (1 + 0.25 * ctier(s, 'nomgr')) * (chalActive(s, 'storm') ? 0.1 : 1);
-  const total = labM * stardust * planet * quantum * gems * achievements * empire * upgradesAll * rank * artifacts * challenges;
+  const total = cap(labM * stardust * planet * quantum * gems * achievements * empire * upgradesAll * rank * artifacts * challenges);
   return { lab: labM, stardust, planet, quantum, gems, achievements, empire, upgradesAll, rank, artifacts, challenges, total };
 }
 
@@ -385,18 +387,18 @@ export function compute(s: GameState, now: number, out: Calc): Calc {
     const bldMult = (trait?.bld?.[i] ?? 1) * (1 + art.bld[i]) * (i >= 5 ? highTier : 1);
     const baseRev = d.baseRevenue * owned * perBuildingUpg[i] * bldMult * perm.total;
     const t = d.baseTime / speed;
-    out.unit[i] = blocked ? 0 : (d.baseRevenue * perBuildingUpg[i] * bldMult * perm.total * warp) / d.baseTime;
+    out.unit[i] = blocked ? 0 : cap((d.baseRevenue * perBuildingUpg[i] * bldMult * perm.total * warp) / d.baseTime);
     out.time[i] = t / speedBoost;
-    out.rev[i] = baseRev * incomeBoost;
+    out.rev[i] = cap(baseRev * incomeBoost);
     if (owned > 0) {
       const ps = baseRev / t;
       potential += ps;
       if (isManaged(s, i)) income += ps;
     }
   }
-  out.baseIncome = income;
-  out.income = income * incomeBoost * speedBoost;
-  out.potential = potential * incomeBoost * speedBoost;
+  out.baseIncome = cap(income);
+  out.income = cap(income * incomeBoost * speedBoost);
+  out.potential = cap(potential * incomeBoost * speedBoost);
   out.incomeBoost = incomeBoost;
   out.speedBoost = speedBoost;
   out.perm = perm;

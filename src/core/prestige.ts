@@ -4,6 +4,7 @@ import { emit } from './bus';
 import { canGalaxyJump, lab, pendingQuantum, pendingStardust, planetFor, qlvl, startCash } from './economy';
 import { regenerateQuests } from './meta';
 import { XP, addXp, syncShips } from './rank';
+import { cap } from './safe';
 import type { GameState } from './state';
 
 /** Setzt den aktuellen Lauf zurück (Geld, Anlagen, Upgrades, ggf. Manager) */
@@ -27,9 +28,9 @@ export function supernova(s: GameState): boolean {
   const gain = pendingStardust(s);
   if (gain < 1) return false;
   const runTime = s.runTime;
-  s.stardust += gain;
-  s.stardustEarned += gain;
-  s.stardustLifetime += gain;
+  s.stardust = cap(s.stardust + gain);
+  s.stardustEarned = cap(s.stardustEarned + gain);
+  s.stardustLifetime = cap(s.stardustLifetime + gain);
   s.supernovas++;
   s.totalSupernovas++;
   s.stats.bestRunEarnings = Math.max(s.stats.bestRunEarnings, s.runEarnings);
@@ -52,8 +53,8 @@ export function supernova(s: GameState): boolean {
 export function galaxyJump(s: GameState): boolean {
   if (!canGalaxyJump(s)) return false;
   const gain = pendingQuantum(s);
-  s.quantum += gain;
-  s.quantumEarned += gain;
+  s.quantum = cap(s.quantum + gain);
+  s.quantumEarned = cap(s.quantumEarned + gain);
   s.galaxyJumps++;
   const keep = 0.1 * qlvl(s, 'qlab');
   const nextLab: Record<string, number> = {};

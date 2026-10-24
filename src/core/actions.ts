@@ -12,19 +12,22 @@ import type { Boost, BuyMode, GameState } from './state';
 import { fmt } from './format';
 import { XP, addXp } from './rank';
 import { timeWarp } from './offline';
+import { MAX_VALUE, cap, noteCap } from './safe';
 
 export { timeWarp };
 
 export function earn(s: GameState, amount: number): void {
   if (!(amount > 0)) return;
-  s.cash += amount;
-  s.runEarnings += amount;
-  s.totalEarnings += amount;
+  // Zahlen-Schutz: nie über MAX_VALUE (sonst „unendlich“)
+  s.cash = cap(s.cash + amount);
+  s.runEarnings = cap(s.runEarnings + amount);
+  s.totalEarnings = cap(s.totalEarnings + amount);
+  if (s.cash >= MAX_VALUE || s.runEarnings >= MAX_VALUE) noteCap();
 }
 
 export function addGems(s: GameState, base: number, applyMult = true): number {
   const n = Math.max(1, Math.round(applyMult ? base * gemMult(s) : base));
-  s.gems += n;
+  s.gems = cap(s.gems + n);
   s.stats.gemsEarned += n;
   return n;
 }

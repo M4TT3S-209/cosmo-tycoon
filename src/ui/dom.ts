@@ -41,7 +41,7 @@ export function setClass(el: Element, cls: string, on: boolean): void {
 
 /** scaleX für Fortschrittsbalken, nur bei spürbarer Änderung */
 export function setScale(el: HTMLElement, v: number): void {
-  const x = Math.max(0, Math.min(1, v));
+  const x = Math.max(0, Math.min(1, v || 0));
   const prev = (el as HTMLElement & { _s?: number })._s;
   if (prev === undefined || Math.abs(prev - x) > 0.002) {
     (el as HTMLElement & { _s?: number })._s = x;

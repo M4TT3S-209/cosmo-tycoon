@@ -33,6 +33,7 @@ Ein Weltraum-Idle-Tycoon für das iPhone (als Web-App/PWA): Vom Weltraumschrott-
 - **Auto-Supernova** löst auch aus, wenn ein Lauf seit 5 Minuten kaum noch wächst (mindestens +20 % Sternenstaub)
 - **Faire Preise:** alle Anlagen werden pro Stufe 9 % teurer, eine bessere Anlage ist auf jeder Stufe teurer als eine schwächere
 - Fortschrittsbalken der Prüfungen linear, Missionen lassen sich ohne Neu-Öffnen abholen
+- **Zahlen-Schutz (2.1.1, `src/core/safe.ts`):** JavaScript rechnet nur bis ~1,8e308. Geld, Einkommen, Sternenstaub und Quantenkerne werden deshalb bei 1e300 gedeckelt; beim Speichern werden „unendlich“/NaN repariert, statt als `null` im Spielstand zu landen (das würde beim Laden zur 0). Härtetest: `tests/safe.test.ts`
 
 ## Auf dem iPhone installieren
 

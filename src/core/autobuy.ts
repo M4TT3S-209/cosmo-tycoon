@@ -10,6 +10,7 @@ import {
   buildingBlocked, buildingCost, chalActive, compute, ctier, empireMultPer, isManaged, lab, maxAffordable,
   milestoneCount, newCalc, nextEmpireMilestone, nextMilestone, rateAt,
 } from './economy';
+import { cap } from './safe';
 import type { GameState } from './state';
 
 /** Länger als so viele Sekunden wird nicht auf ein Upgrade oder einen Manager gespart */
@@ -88,7 +89,8 @@ function refresh(s: GameState, now: number, o: AutoOptions): void {
     potential += rate[i];
     if (isManaged(s, i)) managed += rate[i];
   }
-  income = managed * (o.efficiency ?? calc.incomeBoost * calc.speedBoost);
+  potential = cap(potential);
+  income = cap(managed * (o.efficiency ?? calc.incomeBoost * calc.speedBoost));
 }
 
 /** Darf der Käufer diese Anlage kaufen? (freigeschaltet oder die nächste gesperrte) */
@@ -122,7 +124,7 @@ function prepareSingles(s: GameState): number {
     const room = next === null ? Infinity : next - 1 - own;
     if (room < 1) continue;
     const c0 = buildingCost(s, i, 1);
-    const d = calc.unit[i] * Math.pow(2, milestoneCount(own));
+    const d = cap(calc.unit[i] * Math.pow(2, milestoneCount(own)));
     segRoom[i] = room;
     segLogC0[i] = Math.log(c0);
     segLogD[i] = Math.log(d);

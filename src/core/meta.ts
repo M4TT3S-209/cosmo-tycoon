@@ -8,6 +8,7 @@ import { XP, addXp } from './rank';
 import { emit } from './bus';
 import { compute, managerCost, newCalc, nextMilestone, offlineCapSec, offlineEfficiency } from './economy';
 import { fmt } from './format';
+import { MAX_VALUE } from './safe';
 import type { GameState, Quest, QuestType } from './state';
 
 // ---- Erfolge ----------------------------------------------------------------
@@ -51,7 +52,8 @@ function pick<T>(arr: T[]): T {
 export function questProgress(s: GameState, q: Quest): [number, number] {
   switch (q.type) {
     case 'buy': return [s.stats.boughtBy[q.target] - q.base, q.goal];
-    case 'earn': return [s.totalEarnings - q.base, q.goal];
+    // an der Zahlen-Obergrenze wächst totalEarnings nicht mehr – dann gilt das Ziel als erreicht
+    case 'earn': return [s.totalEarnings >= MAX_VALUE ? q.goal : s.totalEarnings - q.base, q.goal];
     case 'comet': return [s.stats.cometsTapped - q.base, q.goal];
     case 'upgrade': return [s.stats.upgradesBought - q.base, q.goal];
     case 'tap': return [s.stats.taps - q.base, q.goal];
@@ -76,7 +78,8 @@ export function questText(q: Quest): string {
 export function genQuest(s: GameState, exclude: QuestType[]): Quest {
   const c = compute(s, Date.now(), scratch);
   const hi = highestOwned(s);
-  const options: QuestType[] = ['buy', 'earn', 'comet'];
+  const options: QuestType[] = ['buy', 'comet'];
+  if (s.totalEarnings < MAX_VALUE / 1e6) options.push('earn');
   if (UPGRADES.some((u) => !s.upgrades[u.id] && u.cost < Math.max(s.cash, c.potential * 1800) * 3)) options.push('upgrade');
   if (s.buildings.some((b, i) => b.owned > 0 && !s.managers[i])) options.push('tap');
   options.push('milestone');

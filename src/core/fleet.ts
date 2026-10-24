@@ -5,6 +5,7 @@ import { PLANETS } from '../data/planets';
 import { emit } from './bus';
 import { artifactBonus, gemMult, planetTrait } from './economy';
 import { addXp, artifactSlots } from './rank';
+import { cap } from './safe';
 import type { GameState, Mission } from './state';
 
 export function bestPlanet(s: GameState): number {
@@ -148,9 +149,9 @@ export function claimExpedition(s: GameState, slot: number, now: number, rnd: ()
     s.stats.gemsEarned += loot.gems;
   }
   if (loot.dust) {
-    s.stardust += loot.dust;
-    s.stardustEarned += loot.dust;
-    s.stardustLifetime += loot.dust;
+    s.stardust = cap(s.stardust + loot.dust);
+    s.stardustEarned = cap(s.stardustEarned + loot.dust);
+    s.stardustLifetime = cap(s.stardustLifetime + loot.dust);
   }
   s.fleet.expeditions++;
   addXp(s, loot.xp);

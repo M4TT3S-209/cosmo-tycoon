@@ -21,6 +21,7 @@ export interface GameEvents {
   rankUp: { level: number; gems: number };
   challengeDone: { id: string; tier: number };
   challengeFailed: { id: string };
+  numberCap: Record<string, never>;
 }
 
 export type CometKind = 'cash' | 'frenzy' | 'speed' | 'gems';
