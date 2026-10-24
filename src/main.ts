@@ -12,7 +12,10 @@ import { toast } from './ui/fx';
 import { installAudioUnlock, resumeAudio, suspendAudio } from './audio/sfx';
 import { initDebug } from './ui/debug';
 
+/** ab dieser Abwesenheit gibt es den „Willkommen zurück“-Dialog */
 const OFFLINE_MIN_SEC = 45;
+/** kürzere Pausen (App kurz im Hintergrund) werden still nachgerechnet */
+const SILENT_MIN_SEC = 2;
 
 function boot(): void {
   const now = Date.now();
@@ -37,6 +40,7 @@ function boot(): void {
 
   if (res.fresh || G.s.tutorial.step === 0) {
     G.s.tutorial.flags.v2intro = true;
+    G.s.tutorial.flags.v21intro = true;
     showIntro(() => {
       G.s.tutorial.step = 1;
       saveGame(G.s);
@@ -83,18 +87,18 @@ function checkOffline(): void {
   const away = (now - G.s.lastActive) / 1000;
   G.s.lastActive = now;
   lastTs = performance.now();
-  if (away < OFFLINE_MIN_SEC) return;
+  if (away < SILENT_MIN_SEC) return;
   const r = simulateOffline(G.s, away, now);
   saveGame(G.s);
-  if (r.earned > 0 || r.bought > 0) offlineDialog(r);
+  if (away >= OFFLINE_MIN_SEC && (r.earned > 0 || r.bought > 0 || r.supernovas > 0)) offlineDialog(r);
 }
 
 let lastTs = performance.now();
 function loop(ts: number): void {
   const now = Date.now();
   G.now = now;
-  // Großer Sprung (App war eingefroren, ohne visibilitychange) → wie offline behandeln
-  if ((now - G.s.lastActive) / 1000 > OFFLINE_MIN_SEC) checkOffline();
+  // Sprung (App war eingefroren, ohne visibilitychange) → wie offline behandeln
+  if ((now - G.s.lastActive) / 1000 > SILENT_MIN_SEC) checkOffline();
   let dt = (ts - lastTs) / 1000;
   lastTs = ts;
   if (!(dt > 0)) dt = 0;

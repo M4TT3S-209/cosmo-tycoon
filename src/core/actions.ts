@@ -31,10 +31,15 @@ export function addGems(s: GameState, base: number, applyMult = true): number {
 
 export function buyBuilding(s: GameState, i: number, mode: BuyMode): boolean {
   if (buildingBlocked(s, i)) return false;
-  const n = buyAmount(s, i, mode);
+  return buyBuildingCount(s, i, buyAmount(s, i, mode), true);
+}
+
+/** Kauft genau `n` Stück (Auto-Käufer); `signal` meldet „zu teuer“ an die Oberfläche */
+export function buyBuildingCount(s: GameState, i: number, n: number, signal = false): boolean {
+  if (buildingBlocked(s, i)) return false;
   const cost = buildingCost(s, i, n);
-  if (n < 1 || cost > s.cash) {
-    emit('cantAfford', {});
+  if (!(n >= 1) || cost > s.cash) {
+    if (signal) emit('cantAfford', {});
     return false;
   }
   const before = milestoneCount(s.buildings[i].owned);

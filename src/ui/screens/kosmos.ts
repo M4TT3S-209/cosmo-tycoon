@@ -390,7 +390,7 @@ export function createKosmos(): Screen {
       updaters.push(() => {
         const st = G.s;
         if (!st.challenge.active) return;
-        setScale(fill, Math.log10(1 + st.runEarnings) / Math.log10(1 + st.challenge.goal));
+        setScale(fill, st.runEarnings / st.challenge.goal);
         let t = `${fmt(st.runEarnings)} / ${fmt(st.challenge.goal)}`;
         if (st.challenge.active === 'countdown') t += ` · ⏱ ${fmtClock(countdownLeft(st))}`;
         setText(txt, t);

@@ -112,6 +112,7 @@ export function frameUi(dt: number): void {
     screenBox.scrollTop = y;
   }
   current!.update(dt);
+  flushPending();
   updateHud(dt);
   updateStarfield(dt);
   updateFx(dt);
@@ -134,17 +135,11 @@ function wireEvents(): void {
   on('structure', () => {
     G.dirty = true;
   });
-  on('milestone', ({ building, level }) => {
-    sfx.milestone();
-    haptic();
-    flashBuilding(building);
-    toast(BUILDINGS[building].emoji, `${BUILDINGS[building].name}: Tempo ×2!`, `Meilenstein ${level} erreicht`);
-  });
-  on('empire', ({ mult }) => {
-    sfx.milestone();
-    haptic();
-    burst(window.innerWidth / 2, 140, '#ffd166', 40, 'spark', 1.4);
-    toast('🏆', 'Imperium-Meilenstein!', `Gesamter Ertrag ×${String(mult).replace('.', ',')}`, true);
+  // Meilensteine, Imperium und Rang werden gebündelt gemeldet (der Auto-Käufer kauft oft viele auf einmal)
+  on('milestone', (m) => pending.milestones.push(m));
+  on('empire', (e) => {
+    pending.empire = e;
+    pending.empireCount++;
   });
   on('achievement', ({ def }) => {
     sfx.achievement();
@@ -171,10 +166,9 @@ function wireEvents(): void {
     openTab('anlagen');
   });
   on('rankUp', ({ level, gems }) => {
-    sfx.achievement();
-    haptic();
-    const newTitle = (level - 1) % 10 === 0;
-    toast('⭐', newTitle ? `Neuer Rang: ${rankTitle(level)}!` : `Kommandanten-Level ${level}!`, `+${gems} 💎 · +1 % Einkommen`, true, 3200);
+    if (!pending.rank) pending.rank = { from: level - 1, to: level, gems: 0 };
+    pending.rank.to = level;
+    pending.rank.gems += gems;
   });
   on('challengeDone', ({ id, tier }) => {
     const c = CHALLENGE_INDEX[id];
@@ -209,6 +203,52 @@ function wireEvents(): void {
   });
 }
 
+const pending = {
+  milestones: [] as { building: number; level: number }[],
+  empire: null as { level: number; mult: number } | null,
+  empireCount: 0,
+  rank: null as { from: number; to: number; gems: number } | null,
+};
+let lastMilestoneFx = 0;
+
+/** Gesammelte Meldungen ausgeben: höchstens ein Ton und ein Toast je Art */
+function flushPending(): void {
+  const now = performance.now();
+  if (pending.empire) {
+    const { mult } = pending.empire;
+    const more = pending.empireCount > 1 ? ` (${pending.empireCount}×)` : '';
+    sfx.milestone();
+    haptic();
+    burst(window.innerWidth / 2, 140, '#ffd166', 40, 'spark', 1.4);
+    toast('🏆', `Imperium-Meilenstein!${more}`, `Gesamter Ertrag ×${String(mult).replace('.', ',')}`, true);
+    pending.empire = null;
+    pending.empireCount = 0;
+    lastMilestoneFx = now;
+  }
+  // einzelne Meilensteine höchstens alle 1,2 s melden, dazwischen sammeln
+  if (pending.milestones.length && now - lastMilestoneFx > 1200) {
+    const list = pending.milestones;
+    const last = list[list.length - 1];
+    const b = BUILDINGS[last.building];
+    sfx.milestone();
+    haptic();
+    for (const i of new Set(list.map((m) => m.building))) flashBuilding(i);
+    const more = list.length - 1;
+    toast(b.emoji, `${b.name}: Tempo ×2!`, more > 0 ? `Meilenstein ${last.level} · +${more} weitere Meilensteine` : `Meilenstein ${last.level} erreicht`);
+    list.length = 0;
+    lastMilestoneFx = now;
+  }
+  if (pending.rank) {
+    const { from, to, gems } = pending.rank;
+    sfx.achievement();
+    haptic();
+    const newTitle = Math.floor((to - 1) / 10) > Math.floor((from - 1) / 10);
+    const title = newTitle ? `Neuer Rang: ${rankTitle(to)}!` : to - from > 1 ? `Kommandanten-Level ${to}! (+${to - from})` : `Kommandanten-Level ${to}!`;
+    toast('⭐', title, `+${gems} 💎 · +${to - from} % Einkommen`, true, 3200);
+    pending.rank = null;
+  }
+}
+
 function planetReveal(i: number): void {
   const p = PLANETS[i];
   const sp = sphereEl(p);
@@ -224,40 +264,59 @@ function planetReveal(i: number): void {
 
 // ---- Willkommens-Dialoge -----------------------------------------------------
 
-/** Zusammenfassung der Offline-Zeit (das Geld ist bereits gutgeschrieben) */
+/** Zusammenfassung der Offline-Zeit (Geld, Käufe und Supernovas sind bereits verbucht) */
 export function offlineDialog(r: OfflineSummary): void {
   const cost = 10;
+  const center = (html: string) => `<div class="sub" style="text-align:center">${html}</div>`;
   const auto: string[] = [];
-  if (r.bought) auto.push(`🤖 ${fmt(r.bought, false)} Anlagen gekauft`);
+  if (r.bought) auto.push(`🤖 ${fmt(r.bought, false)} Anlagen`);
   if (r.upgrades) auto.push(`🛠️ ${r.upgrades} Upgrade${r.upgrades === 1 ? '' : 's'}`);
-  if (r.managers) auto.push(`👔 ${r.managers} Manager eingestellt`);
+  if (r.managers) auto.push(`👔 ${r.managers} Manager`);
+  const lines: string[] = [];
+  if (auto.length) lines.push(center(auto.join(' · ') + ' gekauft'));
+  if (r.supernovas) {
+    lines.push(center(`💥 <b>${r.supernovas} Supernova${r.supernovas === 1 ? '' : 's'}</b> ausgelöst: <b class="dust-c">+${fmt(r.stardust, false)} ✨</b>`));
+  }
+  if (r.planetAfter > r.planetBefore) lines.push(center(`🪐 Neuer Planet: <b>${PLANETS[r.planetAfter].name}</b>`));
+  if (r.pendingAfter >= 1 && r.pendingAfter !== r.pendingBefore) {
+    lines.push(center(r.supernovas
+      ? `✨ Nächste Supernova bringt schon +${fmt(r.pendingAfter, false)} ✨`
+      : `✨ Supernova bringt jetzt +${fmt(r.pendingAfter, false)} ✨ (vorher +${fmt(r.pendingBefore, false)})`));
+  }
+  for (const [id, tier] of r.challenges) lines.push(center(`🏅 Prüfung bestanden: <b>${CHALLENGE_INDEX[id].name}</b> (Stufe ${tier})`));
+  for (const id of r.failed) lines.push(center(`⏱️ ${CHALLENGE_INDEX[id].name}: Zeit abgelaufen`));
+  if (r.rankAfter > r.rankBefore) lines.push(center(`⭐ Kommandanten-Level ${r.rankBefore} → ${r.rankAfter}`));
   const ready = readyMissions(G.s, Date.now());
+  if (ready) lines.push(center(`🚀 ${ready} Expedition${ready === 1 ? '' : 'en'} zurück – Beute wartet in der Flotte!`));
+  const canDouble = r.runEarned > 0;
   showModal({
     hero: '🌙',
     title: 'Willkommen zurück!',
     body: [
-      `Du warst <b>${fmtTime(r.seconds)}</b> weg. Deine Manager haben in der Zeit gearbeitet:`,
-      `<div class="big-num gold-c num" style="text-align:center;margin:10px 0">+${fmt(r.earned)}</div>`,
-      auto.length ? `<div class="sub" style="text-align:center">${auto.join(' · ')}</div>` : '',
-      ready ? `<div class="sub" style="text-align:center">🚀 ${ready} Expedition${ready === 1 ? '' : 'en'} zurück – Beute wartet in der Flotte!</div>` : '',
+      `Du warst <b>${fmtTime(r.seconds)}</b> weg. Deine Manager und Roboter haben weitergearbeitet:`,
+      `<div class="big-num gold-c num" style="text-align:center;margin:10px 0">+${fmt(r.supernovas ? r.runEarned : r.earned)}</div>`,
+      r.supernovas && canDouble ? center('im aktuellen Lauf seit der letzten Supernova') : '',
+      ...lines,
       r.capped ? `<span class="hint">Offline-Speicher voll nach ${fmtTime(r.counted)} – erweitere ihn im Labor (🔋) oder mit Artefakten.</span>` : '',
     ].filter(Boolean),
     actions: [
-      {
-        label: `✨ Verdoppeln (${cost} 💎)`,
-        cls: 'cyan',
-        onClick: () => {
-          if (G.s.gems < cost) {
-            sfx.error();
-            toast('💎', 'Nicht genug Kristalle');
-            return false;
-          }
-          G.s.gems -= cost;
-          earn(G.s, r.earned);
-          sfx.claim();
-          burst(window.innerWidth / 2, window.innerHeight * 0.6, '#ffd166', 40, 'coin', 1.4);
-        },
-      },
+      ...(canDouble
+        ? [{
+            label: `✨ Verdoppeln (${cost} 💎)`,
+            cls: 'cyan',
+            onClick: () => {
+              if (G.s.gems < cost) {
+                sfx.error();
+                toast('💎', 'Nicht genug Kristalle');
+                return false;
+              }
+              G.s.gems -= cost;
+              earn(G.s, r.runEarned);
+              sfx.claim();
+              burst(window.innerWidth / 2, window.innerHeight * 0.6, '#ffd166', 40, 'coin', 1.4);
+            },
+          }]
+        : []),
       {
         label: '💰 Super!',
         cls: '',

@@ -63,22 +63,43 @@ export function initTutorial(root: HTMLElement): void {
 }
 
 /** Einmaliger Hinweis auf die Neuerungen von Version 2 (nur für bestehende Spielstände) */
+const NEW_IN_21 = [
+  '🤖 <b>Schlauer Auto-Käufer:</b> kauft nach Kosten und Nutzen, achtet auf Meilensteine (Tempo ×2) und Imperium-Boni, spart gezielt für starke Upgrades – und kommt jetzt auch bei riesigem Einkommen hinterher.',
+  '🌙 <b>Offline:</b> Auto-Käufer, Auto-Upgrader und Auto-Supernova arbeiten weiter, während du weg bist. Die Auto-Supernova löst jetzt auch aus, wenn ein Lauf kaum noch wächst – so sammelst du auch nachts Sternenstaub.',
+  '🏗️ <b>Faire Preise:</b> Alle Anlagen werden pro Stufe 9 % teurer – eine bessere Anlage ist jetzt immer teurer als eine schwächere. Bohrer bis Mondbasis werden dadurch viel günstiger.',
+];
+
 export function showWhatsNew(): void {
   const s = G.s;
-  if (s.tutorial.flags.v2intro) return;
-  s.tutorial.flags.v2intro = true;
+  if (!s.tutorial.flags.v2intro) {
+    s.tutorial.flags.v2intro = true;
+    s.tutorial.flags.v21intro = true;
+    showModal({
+      hero: '🎉',
+      title: 'Cosmo Tycoon 2.1',
+      body: [
+        'Dein Spielstand ist vollständig erhalten. Neu dazugekommen:',
+        ...NEW_IN_21,
+        '🚀 <b>Raumflotte:</b> Expeditionen bringen Exotische Materie und Artefakte.',
+        '🏺 <b>24 Artefakte</b> mit Seltenheiten, Stufen und Ausrüstungs-Plätzen.',
+        '🏅 <b>8 Prüfungen</b> mit je 5 Stufen und dauerhaften Belohnungen.',
+        '🪐 <b>Planeten-Boni</b> und ⭐ <b>Kommandanten-Rang</b> bis Level 100 – deine bisherigen Leistungen wurden schon angerechnet.',
+      ],
+      actions: [{ label: '🚀 Los geht’s!', cls: 'violet' }],
+    });
+    return;
+  }
+  if (s.tutorial.flags.v21intro) return;
+  s.tutorial.flags.v21intro = true;
   showModal({
-    hero: '🎉',
-    title: 'Cosmo Tycoon 2.0',
+    hero: '🤖',
+    title: 'Cosmo Tycoon 2.1',
     body: [
-      'Dein Spielstand ist vollständig erhalten. Neu dazugekommen:',
-      '🤖 <b>Offline-Automatik:</b> Auto-Käufer und Auto-Upgrader kaufen jetzt auch weiter, während du weg bist.',
-      '🚀 <b>Raumflotte:</b> Expeditionen bringen Exotische Materie und Artefakte.',
-      '🏺 <b>24 Artefakte</b> mit Seltenheiten, Stufen und Ausrüstungs-Plätzen.',
-      '🏅 <b>8 Prüfungen</b> mit je 5 Stufen und dauerhaften Belohnungen.',
-      '🪐 <b>Planeten-Boni</b> und ⭐ <b>Kommandanten-Rang</b> bis Level 100 – deine bisherigen Leistungen wurden schon angerechnet.',
+      'Danke für dein Feedback! Dein Spielstand ist unverändert. Neu:',
+      ...NEW_IN_21,
+      '🐛 Der Fortschrittsbalken bei Prüfungen stimmt jetzt, und fertige Missionen lassen sich sofort abholen.',
     ],
-    actions: [{ label: '🚀 Los geht’s!', cls: 'violet' }],
+    actions: [{ label: '🚀 Weiter geht’s!', cls: 'violet' }],
   });
 }
 

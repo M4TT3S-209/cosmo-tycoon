@@ -1,61 +1,123 @@
-// Offline-Simulation: Einkommen in Schritten gutschreiben, dazwischen kaufen Auto-Käufer/-Upgrader
+// Offline-Simulation: Einkommen in mitwachsenden Zeitschritten gutschreiben. Dazwischen arbeiten
+// Auto-Käufer, Auto-Upgrader, Prüfungen und Auto-Supernova genau wie im laufenden Spiel.
 import { muteEvents, emit } from './bus';
-import { compute, lab, newCalc, offlineCapSec, offlineEfficiency } from './economy';
+import { compute, ctier, newCalc, offlineCapSec, offlineEfficiency, pendingStardust } from './economy';
 import { earn } from './actions';
-import { autoBuy, autoUpgrade } from './tick';
+import { autoOptions, autoSpend } from './autobuy';
+import { checkChallenge } from './challenges';
+import { autoSupernovaReady, supernova } from './prestige';
 import type { GameState } from './state';
 
-const MAX_STEPS = 240;
-const STEP_SECONDS = 30;
+/** Schrittweite: 8 % der bisherigen Laufzeit, mindestens 2 s, höchstens 10 min */
+const STEP_FRACTION = 0.08;
+const MIN_STEP = 2;
+const MAX_STEP = 600;
+const MAX_STEPS = 6000;
+/** Rechenzeit-Bremse: danach in großen Schritten zu Ende rechnen */
+const TIME_BUDGET_MS = 500;
 const scratch = newCalc();
 
 export interface OfflineSummary {
   seconds: number;
   counted: number;
   capped: boolean;
+  /** Geld insgesamt, über alle Läufe */
   earned: number;
+  /** Geld seit der letzten Supernova (das verdoppelt der Dialog) */
+  runEarned: number;
   bought: number;
   upgrades: number;
   managers: number;
+  supernovas: number;
+  stardust: number;
+  planetBefore: number;
+  planetAfter: number;
+  /** Sternenstaub, den eine Supernova bringen würde: vorher → nachher */
+  pendingBefore: number;
+  pendingAfter: number;
+  rankBefore: number;
+  rankAfter: number;
+  /** bestandene Prüfungen: [id, Stufe] */
+  challenges: [string, number][];
+  /** abgelaufene Prüfungen (Countdown) */
+  failed: string[];
 }
 
-/**
- * Simuliert `seconds` Abwesenheit.
- * @param efficiency Anteil des Einkommens (Offline-Effizienz) – 1 beim Zeitsprung
- * @param cap ob der Offline-Speicher die Dauer begrenzt
- */
-export function simulateOffline(s: GameState, seconds: number, now: number, efficiency = offlineEfficiency(s), cap = true): OfflineSummary {
+export interface OfflineOptions {
+  /** Anteil des Einkommens (Offline-Effizienz) – 1 beim Zeitsprung */
+  efficiency?: number;
+  /** ob der Offline-Speicher die Dauer begrenzt */
+  cap?: boolean;
+  /** Auto-Supernova erlaubt (aus beim Zeitsprung) */
+  supernova?: boolean;
+  /** zählt als Laufzeit (aus beim Zeitsprung, wegen der Countdown-Prüfung) */
+  runTime?: boolean;
+}
+
+const perfNow = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+/** Simuliert `seconds` Abwesenheit. */
+export function simulateOffline(s: GameState, seconds: number, now: number, opt: OfflineOptions = {}): OfflineSummary {
+  const efficiency = opt.efficiency ?? offlineEfficiency(s);
+  const cap = opt.cap ?? true;
+  const allowNova = opt.supernova ?? true;
+  const countRun = opt.runTime ?? true;
   const counted = Math.max(0, cap ? Math.min(seconds, offlineCapSec(s)) : seconds);
   const before = { bought: s.stats.buildingsBought, upgrades: s.stats.upgradesBought, managers: s.stats.managersHired };
-  const steps = Math.max(1, Math.min(MAX_STEPS, Math.ceil(counted / STEP_SECONDS)));
-  const dt = counted / steps;
-  const doUpgrade = lab(s, 'autoupgrade') > 0 && s.settings.autoUpgrade;
-  const doBuy = lab(s, 'autobuy') > 0 && s.settings.autoBuy;
-  let earned = 0;
+  const sum: OfflineSummary = {
+    seconds, counted, capped: cap && seconds > counted, earned: 0, runEarned: 0, bought: 0, upgrades: 0, managers: 0,
+    supernovas: 0, stardust: 0, planetBefore: s.planet, planetAfter: s.planet, pendingBefore: pendingStardust(s), pendingAfter: 0,
+    rankBefore: s.rank.level, rankAfter: s.rank.level, challenges: [], failed: [],
+  };
+  const auto = autoOptions(s);
+  const start = perfNow();
+  let clock = s.runTime;
+  let t = 0;
+  let hurry = false;
   muteEvents(true);
   try {
-    for (let k = 0; k < steps && counted > 0; k++) {
+    for (let step = 0; t < counted && step < MAX_STEPS; step++) {
+      if (!hurry && (step & 31) === 31 && perfNow() - start > TIME_BUDGET_MS) hurry = true;
+      let dt = Math.min(MAX_STEP, Math.max(MIN_STEP, clock * STEP_FRACTION));
+      if (hurry) dt = Math.max(dt, (counted - t) / 16);
+      dt = Math.min(dt, counted - t);
       compute(s, now, scratch);
       const amount = scratch.baseIncome * efficiency * dt;
       earn(s, amount);
-      earned += amount;
-      s.runTime += dt;
-      if (doUpgrade) autoUpgrade(s);
-      if (doBuy) autoBuy(s);
+      sum.earned += amount;
+      sum.runEarned += amount;
+      t += dt;
+      clock += dt;
+      if (countRun) s.runTime += dt;
+      if (auto) autoSpend(s, now, { ...auto, efficiency, maxSteps: 60 });
+      const chal = s.challenge.active;
+      if (chal) {
+        const tier = ctier(s, chal);
+        checkChallenge(s);
+        if (ctier(s, chal) > tier) sum.challenges.push([chal, ctier(s, chal)]);
+        else if (!s.challenge.active) sum.failed.push(chal);
+      }
+      if (allowNova && !s.challenge.active && autoSupernovaReady(s)) {
+        const gain = pendingStardust(s);
+        if (supernova(s)) {
+          sum.supernovas++;
+          sum.stardust += gain;
+          sum.runEarned = 0;
+          clock = 0;
+        }
+      }
     }
   } finally {
     muteEvents(false);
   }
+  sum.bought = s.stats.buildingsBought - before.bought;
+  sum.upgrades = s.stats.upgradesBought - before.upgrades;
+  sum.managers = s.stats.managersHired - before.managers;
+  sum.planetAfter = s.planet;
+  sum.pendingAfter = pendingStardust(s);
+  sum.rankAfter = s.rank.level;
   emit('structure', {});
-  return {
-    seconds,
-    counted,
-    capped: cap && seconds > counted,
-    earned,
-    bought: s.stats.buildingsBought - before.bought,
-    upgrades: s.stats.upgradesBought - before.upgrades,
-    managers: s.stats.managersHired - before.managers,
-  };
+  return sum;
 }
 
 /** Zeitsprung (Shop, tägliche Belohnung): volle Effizienz, kein Deckel. Gibt das verdiente Geld zurück. */
@@ -63,8 +125,8 @@ export function timeWarp(s: GameState, hours: number, now: number): number {
   const c = compute(s, now, scratch);
   let amount: number;
   if (c.baseIncome > 0) {
-    amount = simulateOffline(s, hours * 3600, now, 1, false).earned;
-    s.runTime -= hours * 3600; // Zeitsprung zählt nicht als Laufzeit (Countdown-Prüfung)
+    // ohne Supernova („Einkommen“) und ohne Laufzeit (Countdown-Prüfung)
+    amount = simulateOffline(s, hours * 3600, now, { efficiency: 1, cap: false, supernova: false, runTime: false }).earned;
   } else {
     // ohne Manager zählt wenigstens das halbe Potenzial, damit es sich nie leer anfühlt
     const rate = (c.potential / Math.max(1, c.incomeBoost * c.speedBoost)) * 0.5;

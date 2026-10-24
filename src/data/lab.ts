@@ -99,12 +99,12 @@ export const LAB_NODES: LabNode[] = [
   {
     id: 'autobuy', name: 'Auto-Käufer', emoji: '🤖', branch: 'Automatik', maxLevel: 1, requires: 'keepmgr',
     cost: () => 60, effect: (l) => (l ? 'Kauft Anlagen automatisch' : 'Aus'),
-    desc: 'Ein Roboter kauft automatisch die günstigsten Anlagen. In den Einstellungen abschaltbar.',
+    desc: 'Ein Roboter kauft Anlagen nach Kosten und Nutzen – mit Blick auf Meilensteine, Imperium-Boni und Upgrades. Arbeitet auch offline. In den Einstellungen abschaltbar.',
   },
   {
     id: 'autoupgrade', name: 'Auto-Upgrader', emoji: '🛠️', branch: 'Automatik', maxLevel: 1, requires: 'autobuy',
     cost: () => 150, effect: (l) => (l ? 'Kauft Upgrades & Manager' : 'Aus'),
-    desc: 'Kauft automatisch Upgrades und Manager, sobald du sie dir leisten kannst.',
+    desc: 'Kauft automatisch Upgrades und Manager – auch offline. Zusammen mit dem Auto-Käufer wird für starke Upgrades gezielt gespart.',
   },
 ];
 

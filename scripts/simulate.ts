@@ -1,16 +1,14 @@
 // Headless-Balancing: ein Bot spielt mit der echten Spiellogik und protokolliert die Zeitachse.
 // Aufruf: npx tsx scripts/simulate.ts [Stunden]
-import { BUILDINGS, BUILDING_COUNT } from '../src/data/buildings';
+import { BUILDING_COUNT } from '../src/data/buildings';
 import { MANAGERS } from '../src/data/managers';
-import { UPGRADES } from '../src/data/upgrades';
 import { LAB_NODES } from '../src/data/lab';
 import { PLANETS } from '../src/data/planets';
 import { QUANTUM_PERKS } from '../src/data/quantum';
 import { defaultState } from '../src/core/state';
-import {
-  buildingCost, compute, lab, milestoneCount, newCalc, pendingStardust, stardustExact, pendingQuantum, canGalaxyJump,
-} from '../src/core/economy';
-import { buyBuilding, buyLab, buyQuantum, buyShop, buyUpgrade, hireManager, labAvailable, permCost, tapBuilding } from '../src/core/actions';
+import { compute, lab, newCalc, pendingStardust, stardustExact, pendingQuantum, canGalaxyJump } from '../src/core/economy';
+import { buyLab, buyQuantum, buyShop, labAvailable, permCost, tapBuilding } from '../src/core/actions';
+import { autoSpend } from '../src/core/autobuy';
 import { tick, newTickOut } from '../src/core/tick';
 import { supernova, galaxyJump } from '../src/core/prestige';
 import { claimQuest } from '../src/core/meta';
@@ -45,63 +43,11 @@ function mark(key: string, msg: string) {
   log(msg);
 }
 
-function upgMult(i: number): number {
-  let m = 1;
-  for (const u of UPGRADES) if (u.target === i && s.upgrades[u.id]) m *= u.mult;
-  return m;
-}
-
-function incomeOf(owned: number, unit: number): number {
-  return unit * owned * Math.pow(2, milestoneCount(owned));
-}
-
+/** Der Bot kauft wie der Auto-Käufer im Spiel (vor dem Labor-Knoten spielt er ihn „von Hand“) */
 function botBuy() {
-  // Manager zuerst
+  autoSpend(s, real * 1000, { buildings: true, upgrades: true });
   for (let i = 0; i < BUILDING_COUNT; i++) {
-    if (!s.managers[i] && s.buildings[i].owned > 0 && MANAGERS[i].cost <= s.cash) {
-      hireManager(s, i);
-      mark('mgr' + i, `Manager ${i + 1} (${MANAGERS[i].name})`);
-    }
-  }
-  for (const u of UPGRADES) {
-    if (s.upgrades[u.id]) continue;
-    if (u.cost > s.cash) break;
-    buyUpgrade(s, u.id);
-  }
-  // Sparen, wenn das nächste Upgrade/Manager bald bezahlbar ist
-  compute(s, 0, calc);
-  const rate = Math.max(calc.potential, 1);
-  const nextUpg = UPGRADES.find((u) => !s.upgrades[u.id]);
-  const nextMgr = MANAGERS.find((_, i) => !s.managers[i] && s.buildings[i].owned > 0);
-  let reserve = 0;
-  if (nextUpg && nextUpg.cost < rate * 90) reserve = Math.max(reserve, nextUpg.cost);
-  if (nextMgr && nextMgr.cost < rate * 90) reserve = Math.max(reserve, nextMgr.cost);
-
-  const perm = calc.perm.total;
-  const warp = 1 + 0.25 * lab(s, 'warp');
-  for (let iter = 0; iter < 200; iter++) {
-    let best = -1;
-    let bestN = 0;
-    let bestScore = 0;
-    for (let i = 0; i < BUILDING_COUNT; i++) {
-      if (s.buildings[i].owned === 0 && i > 0 && s.buildings[i - 1].owned === 0) continue;
-      const d = BUILDINGS[i];
-      const unit = (d.baseRevenue * upgMult(i) * perm * warp) / d.baseTime;
-      const o = s.buildings[i].owned;
-      const cur = incomeOf(o, unit);
-      for (const n of [1, 10]) {
-        const cost = buildingCost(s, i, n);
-        if (cost > s.cash - reserve) continue;
-        const score = (incomeOf(o + n, unit) - cur + (o === 0 ? unit * 5 : 0)) / cost;
-        if (score > bestScore) {
-          bestScore = score;
-          best = i;
-          bestN = n;
-        }
-      }
-    }
-    if (best < 0) break;
-    buyBuilding(s, best, bestN as 1 | 10);
+    if (s.managers[i]) mark('mgr' + i, `Manager ${i + 1} (${MANAGERS[i].name})`);
   }
 }
 
@@ -126,6 +72,8 @@ function botLab() {
 }
 
 function botQuantum() {
+  // Auto-Supernova zuerst (das macht jeder Spieler so)
+  buyQuantum(s, 'qauto');
   for (let iter = 0; iter < 50; iter++) {
     let bought = false;
     for (const p of QUANTUM_PERKS) if (buyQuantum(s, p.id)) bought = true;
@@ -173,6 +121,8 @@ function botFleet(maxMinutes: number) {
 
 let chalStart = 0;
 let chalDoneSeen = 0;
+let seenNovas = 0;
+let seenPlanet = 0;
 let lastRankLog = 1;
 let nextNight = 16 * 3600;
 
@@ -194,8 +144,18 @@ while (t < end) {
     botFleet(480);
     const r = simulateOffline(s, 8 * 3600, real * 1000);
     real += 8 * 3600;
-    log(`🌙 Nacht offline: +${fmt(r.earned)} · ${r.bought} Anlagen · ${r.upgrades} Upgrades · ${r.managers} Manager gekauft`);
+    log(`🌙 Nacht offline (${fmtTime(r.counted)} gezählt): +${fmt(r.earned)} · ${r.bought} Anlagen · ${r.upgrades} Upgrades · ${r.managers} Manager` +
+      (r.supernovas ? ` · 💥 ${r.supernovas} Supernovas +${fmt(r.stardust)} ✨` : '') + ` · ✨ möglich ${fmt(r.pendingBefore)} → ${fmt(r.pendingAfter)}` +
+      (r.planetAfter > r.planetBefore ? `  → 🪐 ${PLANETS[r.planetAfter].name}` : ''));
     botFleet(240);
+  }
+  // Supernovas, die das Spiel selbst ausgelöst hat (Auto-Supernova, auch offline): Sternenstaub investieren
+  if (s.totalSupernovas !== seenNovas) {
+    seenNovas = s.totalSupernovas;
+    if (s.planet !== seenPlanet) log(`♻️  Auto-Supernova #${s.totalSupernovas} (gesamt ${fmt(s.stardustEarned)} ✨)  → 🪐 ${PLANETS[s.planet].name}`);
+    seenPlanet = s.planet;
+    pHist.length = 0;
+    botLab();
   }
   if (s.rank.level >= lastRankLog + 10) {
     lastRankLog = Math.floor(s.rank.level / 10) * 10;
@@ -245,6 +205,8 @@ while (t < end) {
       (s.planet > planetBefore ? `  → 🪐 ${PLANETS[s.planet].name}` : ''));
     pHist.length = 0;
     bestRate = 0;
+    seenNovas = s.totalSupernovas;
+    seenPlanet = s.planet;
     botLab();
     if (DEBUG_S) log('   lab ' + JSON.stringify(s.lab));
     if (challengesUnlocked(s) && Math.random() < CHAL_CHANCE) {
@@ -262,6 +224,7 @@ while (t < end) {
     const q = pendingQuantum(s);
     galaxyJump(s);
     log(`⚛️  Galaxie-Sprung #${s.galaxyJumps}: +${q} Quantenkerne`);
+    seenPlanet = s.planet;
     botQuantum();
     botLab();
   }

@@ -22,7 +22,7 @@ const SUBS = [
   { id: 'optionen', label: '⚙️' },
 ];
 
-export const APP_VERSION = '2.0.0';
+export const APP_VERSION = '2.1.0';
 
 let onReplaceState: (() => void) | null = null;
 /** wird von app.ts gesetzt: nach Import/Reset alles neu starten */
@@ -127,9 +127,14 @@ export function createMehr(): Screen {
       grid,
       claimBtn,
     ));
+    // neuer Tag, während das Menü offen ist → neu aufbauen
+    updaters.push(() => {
+      if (canClaimDaily(G.s, G.now) !== today) G.dirty = true;
+    });
 
     el.appendChild(h('div', { class: 'section-title' }, 'Missionen'));
     for (const q of s.quests) {
+      const wasDone = q.done;
       const fill = h('i');
       const ptxt = h('span', { class: 'num' }, '');
       let right: HTMLElement;
@@ -156,6 +161,11 @@ export function createMehr(): Screen {
         ),
       ));
       updaters.push(() => {
+        // Mission fertig geworden oder ersetzt → Karte mit Abholen-Knopf neu aufbauen
+        if (q.done !== wasDone || !G.s.quests.includes(q)) {
+          G.dirty = true;
+          return;
+        }
         const [cur, goal] = questProgress(G.s, q);
         setScale(fill, cur / goal);
         setText(ptxt, `${fmt(Math.min(cur, goal), false)} / ${fmt(goal, false)}`);
@@ -325,9 +335,9 @@ export function createMehr(): Screen {
       G.s.settings.notation = v ? 'sci' : 'short';
       setNotation(G.s.settings.notation);
     });
-    toggle('Auto-Käufer', 'Kauft automatisch Anlagen', () => G.s.settings.autoBuy, (v) => { G.s.settings.autoBuy = v; }, (s.lab.autobuy ?? 0) > 0);
-    toggle('Auto-Upgrader', 'Kauft automatisch Upgrades & Manager', () => G.s.settings.autoUpgrade, (v) => { G.s.settings.autoUpgrade = v; }, (s.lab.autoupgrade ?? 0) > 0);
-    toggle('Auto-Supernova', 'Löst aus, wenn sich der Sternenstaub verdoppelt', () => G.s.settings.autoSupernova, (v) => { G.s.settings.autoSupernova = v; }, (s.qperks.qauto ?? 0) > 0);
+    toggle('Auto-Käufer', 'Kauft Anlagen nach Kosten und Nutzen, achtet auf Meilensteine – auch offline', () => G.s.settings.autoBuy, (v) => { G.s.settings.autoBuy = v; }, (s.lab.autobuy ?? 0) > 0);
+    toggle('Auto-Upgrader', 'Kauft Upgrades & Manager – auch offline', () => G.s.settings.autoUpgrade, (v) => { G.s.settings.autoUpgrade = v; }, (s.lab.autoupgrade ?? 0) > 0);
+    toggle('Auto-Supernova', 'Löst aus, wenn sich der Sternenstaub verdoppelt oder der Lauf kaum noch wächst – auch offline', () => G.s.settings.autoSupernova, (v) => { G.s.settings.autoSupernova = v; }, (s.qperks.qauto ?? 0) > 0);
     el.appendChild(box);
 
     // Spielstand

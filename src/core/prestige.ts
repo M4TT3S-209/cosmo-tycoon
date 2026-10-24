@@ -75,9 +75,33 @@ export function galaxyJump(s: GameState): boolean {
   return true;
 }
 
-/** Auto-Supernova-Perk: löst aus, sobald sich der Sternenstaub mindestens verdoppelt */
+/** Stillstand: seit so vielen Sekunden Laufzeit … */
+const STALL_WINDOW = 300;
+/** … weniger als 3 % Zuwachs, bei mindestens 20 % des bisherigen Sternenstaubs und 20 min Laufzeit */
+const STALL_GROWTH = 1.03;
+const STALL_MIN_SHARE = 0.2;
+const STALL_MIN_RUN = 1200;
+/** Verlauf des möglichen Sternenstaubs im aktuellen Lauf (nur im Speicher, je Spielstand) */
+const novaHists = new WeakMap<GameState, { t: number; p: number }[]>();
+
+/**
+ * Auto-Supernova-Perk: löst aus, sobald sich der Sternenstaub mindestens verdoppelt –
+ * oder wenn der Lauf kaum noch wächst (dann lohnt der Neustart mehr als das Warten).
+ */
 export function autoSupernovaReady(s: GameState): boolean {
   if (qlvl(s, 'qauto') < 1 || !s.settings.autoSupernova) return false;
   const p = pendingStardust(s);
-  return p >= 1 && p >= Math.max(1, s.stardustEarned);
+  const S = Math.max(1, s.stardustEarned);
+  if (p >= 1 && p >= S) return true;
+  // Verlauf führen: neuer Lauf → zurücksetzen, sonst etwa jede Minute ein Messpunkt
+  let novaHist = novaHists.get(s);
+  if (!novaHist) novaHists.set(s, (novaHist = []));
+  const t = s.runTime;
+  const last = novaHist[novaHist.length - 1];
+  if (last && t < last.t) novaHist.length = 0;
+  if (!novaHist.length || t - novaHist[novaHist.length - 1].t >= 60) novaHist.push({ t, p });
+  while (novaHist.length > 2 && novaHist[1].t <= t - STALL_WINDOW) novaHist.shift();
+  if (t < STALL_MIN_RUN || p < Math.max(1, STALL_MIN_SHARE * s.stardustEarned)) return false;
+  const old = novaHist[0];
+  return t - old.t >= STALL_WINDOW && p < old.p * STALL_GROWTH;
 }

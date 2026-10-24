@@ -124,6 +124,11 @@ export function milestoneCount(owned: number): number {
   return c;
 }
 
+/** Ertrag/s einer Anlage mit `owned` Stück, aus dem Stück-Ertrag `unit` (siehe Calc.unit) */
+export function rateAt(unit: number, owned: number): number {
+  return owned > 0 ? unit * owned * Math.pow(2, milestoneCount(owned)) : 0;
+}
+
 export function nextMilestone(owned: number): number | null {
   for (const m of MILESTONES) if (owned < m) return m;
   return null;
@@ -319,6 +324,8 @@ export interface Calc {
   rev: number[];
   /** Zykluszeit je Anlage in Sekunden */
   time: number[];
+  /** Ertrag/s pro Stück ohne Meilensteine und temporäre Boosts (gesperrt: 0) */
+  unit: number[];
   /** Einkommen/s aller Anlagen mit Manager (inkl. Boosts) */
   income: number;
   /** wie income, aber ohne temporäre Boosts (Offline, Zeitsprung) */
@@ -334,6 +341,7 @@ export function newCalc(): Calc {
   return {
     rev: Array(BUILDING_COUNT).fill(0),
     time: Array(BUILDING_COUNT).fill(1),
+    unit: Array(BUILDING_COUNT).fill(0),
     income: 0,
     baseIncome: 0,
     potential: 0,
@@ -371,11 +379,13 @@ export function compute(s: GameState, now: number, out: Calc): Calc {
   let potential = 0;
   for (let i = 0; i < BUILDING_COUNT; i++) {
     const d = BUILDINGS[i];
-    const owned = buildingBlocked(s, i) ? 0 : s.buildings[i].owned;
+    const blocked = buildingBlocked(s, i);
+    const owned = blocked ? 0 : s.buildings[i].owned;
     const speed = warp * Math.pow(2, milestoneCount(owned));
     const bldMult = (trait?.bld?.[i] ?? 1) * (1 + art.bld[i]) * (i >= 5 ? highTier : 1);
     const baseRev = d.baseRevenue * owned * perBuildingUpg[i] * bldMult * perm.total;
     const t = d.baseTime / speed;
+    out.unit[i] = blocked ? 0 : (d.baseRevenue * perBuildingUpg[i] * bldMult * perm.total * warp) / d.baseTime;
     out.time[i] = t / speedBoost;
     out.rev[i] = baseRev * incomeBoost;
     if (owned > 0) {

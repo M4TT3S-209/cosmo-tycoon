@@ -11,6 +11,7 @@ import { computeOffline, claimDaily, canClaimDaily, dayKey, ensureQuests, questP
 import { tick, newTickOut } from '../src/core/tick';
 import { exportCode, importCode, serialize, deserialize } from '../src/core/save';
 import { UPGRADES } from '../src/data/upgrades';
+import { BUILDINGS } from '../src/data/buildings';
 import { PLANETS } from '../src/data/planets';
 
 describe('Formatierung', () => {
@@ -56,7 +57,14 @@ describe('Wirtschaft', () => {
     s.cash = 100;
     expect(buyBuilding(s, 0, 1)).toBe(true);
     expect(s.buildings[0].owned).toBe(2);
-    expect(s.cash).toBeCloseTo(100 - 4 * 1.07);
+    expect(s.cash).toBeCloseTo(100 - 4 * BUILDINGS[0].costMult);
+  });
+  it('eine bessere Anlage ist auf jeder Stufe teurer als eine schwächere', () => {
+    const s = defaultState(0);
+    for (const level of [0, 100, 1000, 3000]) {
+      for (const b of s.buildings) b.owned = level;
+      for (let i = 0; i + 1 < BUILDINGS.length; i++) expect(buildingCost(s, i, 1)).toBeLessThan(buildingCost(s, i + 1, 1));
+    }
   });
   it('Tippen startet einen Zyklus, der Geld bringt', () => {
     const s = defaultState(0);

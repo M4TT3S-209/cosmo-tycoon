@@ -33,8 +33,8 @@ export const QUANTUM_PERKS: QuantumPerk[] = [
   },
   {
     id: 'qauto', name: 'Auto-Supernova', emoji: '♻️', maxLevel: 1,
-    cost: () => 5, effect: (l) => (l ? 'Automatisch, sobald sich der Sternenstaub verdoppelt' : 'Aus'),
-    desc: 'Löst automatisch eine Supernova aus, wenn sie deinen Sternenstaub mindestens verdoppelt. In den Einstellungen abschaltbar.',
+    cost: () => 5, effect: (l) => (l ? 'Automatisch, sobald es sich lohnt' : 'Aus'),
+    desc: 'Löst automatisch eine Supernova aus, wenn sie deinen Sternenstaub verdoppelt – oder wenn der Lauf seit 5 Minuten kaum noch wächst und sie mindestens +20 % bringt. Auch offline. In den Einstellungen abschaltbar.',
   },
   {
     id: 'qgems', name: 'Kristall-Resonanz', emoji: '🔮', maxLevel: 4,

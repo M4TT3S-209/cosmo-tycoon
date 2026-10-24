@@ -26,6 +26,14 @@ Ein Weltraum-Idle-Tycoon für das iPhone (als Web-App/PWA): Vom Weltraumschrott-
 - **Größere Galaxien:** nach jedem Galaxie-Sprung brauchen die Planeten mehr Sternenstaub
 - Alte Spielstände werden automatisch migriert; eine unveränderte Kopie liegt unter `cosmo-tycoon:backup-v1`
 
+### Neu in Version 2.1
+
+- **Schlauer Auto-Käufer** (`src/core/autobuy.ts`): kauft nach Amortisationszeit (Kosten ÷ Einkommens-Zuwachs, plus Wartezeit), achtet auf Meilensteine (Tempo ×2), Imperium-Meilensteine und Upgrades, spart gezielt für starke Ziele und kauft tausende Stufen auf einmal
+- **Offline wie online:** Auto-Käufer, Auto-Upgrader, Prüfungen und Auto-Supernova laufen in der Offline-Simulation mit (mitwachsende Zeitschritte) – jeweils nur, wenn im Labor bzw. als Quanten-Perk freigeschaltet und eingeschaltet
+- **Auto-Supernova** löst auch aus, wenn ein Lauf seit 5 Minuten kaum noch wächst (mindestens +20 % Sternenstaub)
+- **Faire Preise:** alle Anlagen werden pro Stufe 9 % teurer, eine bessere Anlage ist auf jeder Stufe teurer als eine schwächere
+- Fortschrittsbalken der Prüfungen linear, Missionen lassen sich ohne Neu-Öffnen abholen
+
 ## Auf dem iPhone installieren
 
 1. Link in **Safari** öffnen

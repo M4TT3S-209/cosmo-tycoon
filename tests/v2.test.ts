@@ -4,7 +4,7 @@ import { defaultState } from '../src/core/state';
 import { deserialize, exportCode, importCode, serialize } from '../src/core/save';
 import { compute, newCalc, offlineCapSec, buildingCost, pendingStardust } from '../src/core/economy';
 import { simulateOffline } from '../src/core/offline';
-import { buyBuilding, buyUpgrade, hireManager, tapBuilding } from '../src/core/actions';
+import { buyBuilding, buyUpgrade, hireManager, tapBuilding, timeWarp } from '../src/core/actions';
 import { supernova } from '../src/core/prestige';
 import {
   buyCrate, claimExpedition, equipArtifact, expDuration, grantArtifact, startExpedition, unequipArtifact, upgradeModule,
@@ -16,6 +16,8 @@ import { EXPEDITIONS } from '../src/data/expeditions';
 import { ARTIFACT_MAX_LEVEL } from '../src/data/artifacts';
 
 const V1 = readFileSync(new URL('./fixtures/save-v1.json', import.meta.url), 'utf8');
+// später Spielstand vom Balancing-Bot: Galaxiekern, Labor mit Auto-Käufer/-Upgrader, Auto-Supernova-Perk
+const LATE = readFileSync(new URL('./fixtures/save-late.json', import.meta.url), 'utf8');
 
 function midGame() {
   const s = deserialize(V1, 0);
@@ -100,6 +102,46 @@ describe('Offline-Automatik', () => {
     const r = simulateOffline(s, 100 * 3600, 0);
     expect(r.counted).toBe(offlineCapSec(s));
     expect(r.capped).toBe(true);
+  });
+  it('Auto-Supernova arbeitet offline und bringt Sternenstaub', () => {
+    const s = deserialize(LATE, 0);
+    const dust = s.stardustEarned;
+    const r = simulateOffline(s, 8 * 3600, 0);
+    expect(r.supernovas).toBeGreaterThan(0);
+    expect(r.stardust).toBeGreaterThan(0);
+    expect(s.stardustEarned).toBeCloseTo(dust + r.stardust);
+    expect(r.bought).toBeGreaterThan(1000);
+    expect(r.upgrades).toBeGreaterThan(10);
+  });
+  it('ohne Einstellung keine Auto-Supernova, aber der Vorrat wächst', () => {
+    const s = deserialize(LATE, 0);
+    s.settings.autoSupernova = false;
+    const r = simulateOffline(s, 8 * 3600, 0);
+    expect(r.supernovas).toBe(0);
+    expect(r.pendingAfter).toBeGreaterThan(r.pendingBefore);
+  });
+  it('Automatik nur, wenn sie im Labor freigeschaltet ist', () => {
+    const s = deserialize(LATE, 0);
+    delete s.lab.autobuy;
+    delete s.lab.autoupgrade;
+    delete s.qperks.qauto;
+    const r = simulateOffline(s, 8 * 3600, 0);
+    expect(r.earned).toBeGreaterThan(0);
+    expect(r.bought + r.upgrades + r.managers + r.supernovas).toBe(0);
+  });
+  it('8 h offline sind schnell gerechnet', () => {
+    const s = deserialize(LATE, 0);
+    const t0 = performance.now();
+    simulateOffline(s, 24 * 3600, 0);
+    expect(performance.now() - t0).toBeLessThan(800);
+  });
+  it('Zeitsprung: keine Supernova, Laufzeit bleibt stehen', () => {
+    const s = deserialize(LATE, 0);
+    const novas = s.totalSupernovas;
+    const run = s.runTime;
+    expect(timeWarp(s, 24, 0)).toBeGreaterThan(0);
+    expect(s.totalSupernovas).toBe(novas);
+    expect(s.runTime).toBe(run);
   });
 });
 

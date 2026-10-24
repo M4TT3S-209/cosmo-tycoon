@@ -4,7 +4,8 @@ import {
   buildingBlocked, buildingCost, buyAmount, empireMultPer, isManaged, minOwned, nextEmpireMilestone, nextMilestone,
   planetTrait, prevMilestone,
 } from '../../core/economy';
-import { fmt, fmtClock } from '../../core/format';
+import { fmt, fmtClock, fmtTime } from '../../core/format';
+import { autoOptions, autoStatus } from '../../core/autobuy';
 import type { BuyMode } from '../../core/state';
 import { CHALLENGE_INDEX } from '../../data/challenges';
 import { countdownLeft } from '../../core/challenges';
@@ -51,6 +52,7 @@ export function createAnlagen(): Screen {
   let chalText: HTMLElement | null = null;
   let chalFill: HTMLElement | null = null;
   let empFill: HTMLElement;
+  let autoText: HTMLElement;
   let lastErr = 0;
 
   function cardFor(i: number): CardRefs {
@@ -159,7 +161,8 @@ export function createAnlagen(): Screen {
 
     empText = h('div', { class: 'sub num', style: 'font-weight:700' }, '');
     empFill = h('i');
-    el.appendChild(h('div', { class: 'card empire' }, empText, h('div', { class: 'progress', style: 'margin-top:6px' }, empFill)));
+    autoText = h('div', { class: 'sub num auto-status' }, '');
+    el.appendChild(h('div', { class: 'card empire' }, empText, h('div', { class: 'progress', style: 'margin-top:6px' }, empFill), autoText));
 
     const s = G.s;
     let shownLocked = false;
@@ -190,7 +193,7 @@ export function createAnlagen(): Screen {
     if (chalText && chalFill) {
       if (!s.challenge.active) G.dirty = true;
       else {
-        setScale(chalFill, Math.log10(1 + s.runEarnings) / Math.log10(1 + s.challenge.goal));
+        setScale(chalFill, s.runEarnings / s.challenge.goal);
         let t = `${fmt(s.runEarnings)} / ${fmt(s.challenge.goal)}`;
         if (s.challenge.active === 'countdown') t += ` · ⏱ ${fmtClock(countdownLeft(s))}`;
         setText(chalText, t);
@@ -213,6 +216,17 @@ export function createAnlagen(): Screen {
         setText(empText, `🏆 Alle Anlagen auf ${next} → gesamter Ertrag ×${String(empireMultPer(s)).replace('.', ',')}  (${m}/${next})`);
         setScale(empFill, m / next);
       }
+    }
+
+    // Auto-Käufer: worauf er gerade hinarbeitet (Zeile bleibt stehen, damit nichts springt)
+    const autoOn = !!autoOptions(s)?.buildings;
+    autoText.style.display = autoOn ? '' : 'none';
+    if (autoOn) {
+      const tgt = autoStatus.target;
+      if (tgt && tgt.eta >= 2 && Number.isFinite(tgt.eta)) {
+        const eta = tgt.eta < 3600 ? fmtClock(tgt.eta) : fmtTime(tgt.eta);
+        setText(autoText, tgt.saving ? `🤖 Noch ${eta} sparen für ${tgt.label}` : `🤖 Noch ${eta} bis ${tgt.label}`);
+      } else setText(autoText, '🤖 Auto-Käufer kauft laufend, was sich am meisten lohnt');
     }
 
     for (const r of cards) {

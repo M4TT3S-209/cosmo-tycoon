@@ -1,9 +1,8 @@
 // Simulationsschritt + periodische Automatik
 import { BUILDING_COUNT } from '../data/buildings';
-import { MANAGERS } from '../data/managers';
-import { UPGRADES } from '../data/upgrades';
-import { buyBuilding, earn, hireManager, buyUpgrade, nextCometDelay } from './actions';
-import { buildingBlocked, buildingCost, chalActive, compute, isManaged, lab, type Calc } from './economy';
+import { earn, nextCometDelay } from './actions';
+import { autoOptions, autoSpend, autoStatus } from './autobuy';
+import { buildingBlocked, compute, isManaged, type Calc } from './economy';
 import { checkChallenge } from './challenges';
 import { checkAchievements, ensureQuests, trackDay, updateQuests } from './meta';
 import { autoSupernovaReady, supernova } from './prestige';
@@ -78,44 +77,13 @@ export function tick(s: GameState, dt: number, now: number, calc: Calc, out: Tic
 
 /** Zweimal pro Sekunde: Automatik, Erfolge, Missionen */
 export function slowTick(s: GameState, now: number): void {
-  if (lab(s, 'autoupgrade') > 0 && s.settings.autoUpgrade) autoUpgrade(s);
-  if (lab(s, 'autobuy') > 0 && s.settings.autoBuy) autoBuy(s);
+  const auto = autoOptions(s);
+  if (auto) autoSpend(s, now, auto);
+  else autoStatus.target = null;
   checkChallenge(s);
   if (autoSupernovaReady(s) && !s.challenge.active) supernova(s);
   trackDay(s, now);
   ensureQuests(s);
   updateQuests(s);
   checkAchievements(s);
-}
-
-export function autoUpgrade(s: GameState): void {
-  for (let i = 0; i < BUILDING_COUNT; i++) {
-    if (!s.managers[i] && s.buildings[i].owned > 0 && MANAGERS[i].cost <= s.cash) hireManager(s, i);
-  }
-  if (chalActive(s, 'noupg')) return;
-  for (const u of UPGRADES) {
-    if (s.upgrades[u.id]) continue;
-    if (u.cost > s.cash) break;
-    buyUpgrade(s, u.id);
-  }
-}
-
-/** Kauft die günstigste Anlage, solange sie höchstens 25 % des Geldes kostet */
-export function autoBuy(s: GameState): void {
-  for (let n = 0; n < 40; n++) {
-    let best = -1;
-    let bestCost = Infinity;
-    for (let i = 0; i < BUILDING_COUNT; i++) {
-      // nur freigeschaltete + die nächste noch nicht gekaufte Anlage
-      if (s.buildings[i].owned === 0 && i > 0 && s.buildings[i - 1].owned === 0) continue;
-      if (buildingBlocked(s, i)) continue;
-      const c = buildingCost(s, i, 1);
-      if (c < bestCost) {
-        bestCost = c;
-        best = i;
-      }
-    }
-    if (best < 0 || bestCost > s.cash * 0.25) return;
-    buyBuilding(s, best, 1);
-  }
 }
