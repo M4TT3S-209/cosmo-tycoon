@@ -1,13 +1,14 @@
 // Spieler-Aktionen: kaufen, einstellen, forschen, Shop, Kometen
 import { BUILDINGS } from '../data/buildings';
 import { UPGRADE_INDEX, UPGRADES } from '../data/upgrades';
-import { LAB_INDEX } from '../data/lab';
+import { LAB_INDEX, LAB_NODES, type LabNode } from '../data/lab';
 import { QUANTUM_INDEX } from '../data/quantum';
 import { emit, type CometKind } from './bus';
 import {
   artifactBonus, buildingBlocked, buildingCost, buyAmount, chalActive, compute, ctier, empireCount, empireMultPer,
-  gemMult, boostDurationMult, isManaged, lab, managerCost, milestoneCount, newCalc, planetTrait, type Calc,
+  gemMult, boostDurationMult, isManaged, lab, labCost, managerCost, milestoneCount, newCalc, planetTrait, upgradeCost, type Calc,
 } from './economy';
+import { megaStage, talentBonus } from './talentfx';
 import type { Boost, BuyMode, GameState } from './state';
 import { fmt } from './format';
 import { XP, addXp } from './rank';
@@ -98,11 +99,12 @@ export function hireManager(s: GameState, i: number): boolean {
 export function buyUpgrade(s: GameState, id: string): boolean {
   const u = UPGRADE_INDEX[id];
   if (!u || s.upgrades[id] || chalActive(s, 'noupg')) return false;
-  if (s.cash < u.cost) {
+  const cost = upgradeCost(s, u);
+  if (s.cash < cost) {
     emit('cantAfford', {});
     return false;
   }
-  s.cash -= u.cost;
+  s.cash -= cost;
   s.upgrades[id] = true;
   s.stats.upgradesBought++;
   addXp(s, XP.upgrade);
@@ -117,8 +119,9 @@ export function buyAllUpgrades(s: GameState): number {
   let n = 0;
   for (const u of UPGRADES) {
     if (s.upgrades[u.id]) continue;
-    if (u.cost > s.cash) break;
-    s.cash -= u.cost;
+    const cost = upgradeCost(s, u);
+    if (cost > s.cash) break;
+    s.cash -= cost;
     s.upgrades[u.id] = true;
     s.stats.upgradesBought++;
     n++;
@@ -142,7 +145,7 @@ export function buyLab(s: GameState, id: string): boolean {
   if (!node || !labAvailable(s, id)) return false;
   const lvl = lab(s, id);
   if (lvl >= node.maxLevel) return false;
-  const cost = node.cost(lvl);
+  const cost = labCost(s, node, lvl);
   if (s.stardust < cost) {
     emit('cantAfford', {});
     return false;
@@ -152,6 +155,38 @@ export function buyLab(s: GameState, id: string): boolean {
   emit('lab', { id, level: lvl + 1 });
   emit('structure', {});
   return true;
+}
+
+/** Auto-Labor ab Quantenrechner Stufe 3 (abschaltbar) */
+export function autoLabActive(s: GameState): boolean {
+  return s.settings.autoLab && megaStage(s, 'rechner') >= 3;
+}
+
+/** Auto-Labor: kauft die günstigste bezahlbare Forschung, Einkommen bevorzugt. Gibt die Zahl der Käufe zurück. */
+export function autoLab(s: GameState, maxBuys = 60): number {
+  let n = 0;
+  for (; n < maxBuys; n++) {
+    let best: LabNode | null = null;
+    let bestScore = Infinity;
+    for (const node of LAB_NODES) {
+      if (!labAvailable(s, node.id)) continue;
+      const lvl = lab(s, node.id);
+      if (lvl >= node.maxLevel) continue;
+      const c = labCost(s, node, lvl);
+      if (c > s.stardust) continue;
+      const score = node.id === 'income' ? c * 0.5 : c;
+      if (score < bestScore) {
+        bestScore = score;
+        best = node;
+      }
+    }
+    if (!best) break;
+    const lvl = lab(s, best.id);
+    s.stardust -= labCost(s, best, lvl);
+    s.lab[best.id] = lvl + 1;
+  }
+  if (n) emit('structure', {});
+  return n;
 }
 
 export function buyQuantum(s: GameState, id: string): boolean {
@@ -174,7 +209,8 @@ export function buyQuantum(s: GameState, id: string): boolean {
 // ---- Boosts & Shop ----------------------------------------------------------
 
 export function addBoost(s: GameState, b: Omit<Boost, 'until'>, seconds: number, now: number, maxSeconds = 24 * 3600): void {
-  const dur = seconds * boostDurationMult(s) * 1000;
+  // „Zeitdehnung“ verlängert nur echte Boosts, keine Störungen oder Zahlungen (Multiplikator < 1)
+  const dur = seconds * (b.mult >= 1 ? boostDurationMult(s) : 1) * 1000;
   const existing = s.boosts.find((x) => x.id === b.id && x.until > now);
   if (existing) {
     existing.until = Math.min(Math.max(existing.until, now) + dur, now + maxSeconds * 1000);
@@ -255,19 +291,21 @@ export function buyShop(s: GameState, id: string, now: number): boolean {
 
 export function nextCometDelay(s: GameState): number {
   if (chalActive(s, 'storm')) return 20;
-  const freq = (1 + 0.15 * lab(s, 'magnet')) * (1 + artifactBonus(s).comet + (planetTrait(s)?.comet ?? 0));
+  const freq = (1 + 0.15 * lab(s, 'magnet')) * (1 + artifactBonus(s).comet + (planetTrait(s)?.comet ?? 0)) * talentBonus(s).cometFreq;
   return (120 + Math.random() * 180) / freq;
 }
 
 export function collectComet(s: GameState, now: number, rnd = Math.random()): { kind: CometKind; text: string } {
   s.stats.cometsTapped++;
   addXp(s, XP.comet);
-  const luck = (1 + 0.5 * lab(s, 'luck')) * (1 + artifactBonus(s).cometLuck + 0.5 * ctier(s, 'storm'));
+  const tb = talentBonus(s);
+  const luck = (1 + 0.5 * lab(s, 'luck')) * (1 + artifactBonus(s).cometLuck + 0.5 * ctier(s, 'storm')) * tb.cometLuck * tb.randomLoot;
+  const cashLuck = luck * tb.cashComet;
   let kind: CometKind;
   let text: string;
   if (rnd < 0.42) {
     const c = compute(s, now, scratch);
-    const amount = Math.max(c.potential * 600, s.cash * 0.05 + 25) * luck;
+    const amount = Math.max(c.potential * 600, s.cash * 0.05 + 25) * cashLuck;
     earn(s, amount);
     kind = 'cash';
     text = `Geldregen! +${fmt(amount)} 🪙`;

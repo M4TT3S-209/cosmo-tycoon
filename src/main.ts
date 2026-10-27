@@ -2,6 +2,7 @@ import './styles/main.css';
 import { registerSW } from 'virtual:pwa-register';
 import { ensureQuests, trackDay } from './core/meta';
 import { simulateOffline } from './core/offline';
+import { emit } from './core/bus';
 import { loadGame, saveGame } from './core/save';
 import { tick } from './core/tick';
 import { compute } from './core/economy';
@@ -41,6 +42,7 @@ function boot(): void {
   if (res.fresh || G.s.tutorial.step === 0) {
     G.s.tutorial.flags.v2intro = true;
     G.s.tutorial.flags.v21intro = true;
+    G.s.tutorial.flags.v3intro = true;
     showIntro(() => {
       G.s.tutorial.step = 1;
       saveGame(G.s);
@@ -90,7 +92,12 @@ function checkOffline(): void {
   if (away < SILENT_MIN_SEC) return;
   const r = simulateOffline(G.s, away, now);
   saveGame(G.s);
-  if (away >= OFFLINE_MIN_SEC && (r.earned > 0 || r.bought > 0 || r.supernovas > 0)) offlineDialog(r);
+  if (away >= OFFLINE_MIN_SEC && (r.earned > 0 || r.bought > 0 || r.supernovas > 0 || r.built.length > 0 || r.mega.length > 0)) offlineDialog(r);
+  else {
+    // kurze Pause (App kurz im Hintergrund): fertige Bauten wie gewohnt melden
+    for (const b of r.built) emit('colonyBuilt', b);
+    for (const m of r.mega) emit('megaDone', m);
+  }
 }
 
 let lastTs = performance.now();

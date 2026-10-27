@@ -19,6 +19,16 @@ import { initStarfield, starWarp, updateStarfield } from './starfield';
 import { initComets, spawnComet, updateComets } from './comets';
 import { initTutorial, updateTutorial } from './tutorial';
 import { createAnlagen, flashBuilding } from './screens/anlagen';
+import { createGroup } from './screens/group';
+import { createKolonien, koloniesBadge } from './screens/kolonien';
+import { createKommandant, kommandantBadge } from './screens/kommandant';
+import { onTabOpened, tabIsNew } from './tour';
+import { announceEvent } from './events';
+import { FACTION_INDEX, REP_NAMES } from '../data/factions';
+import { COLONY_BUILDING_INDEX, RES_META } from '../data/colonies';
+import { MEGA_INDEX } from '../data/megaprojects';
+import { RES_IDS } from '../core/colonies';
+import { weeklyClaimable, weeklyContract, weeklyMod } from '../core/weekly';
 import { createManager, managerBadge } from './screens/manager';
 import { createUpgrades, upgradeBadge } from './screens/upgrades';
 import { createKosmos, kosmosBadge } from './screens/kosmos';
@@ -51,16 +61,21 @@ export function buildApp(root: HTMLElement): void {
   initTutorial(root);
 
   screens = {
-    anlagen: createAnlagen(),
-    manager: createManager(),
-    upgrades: createUpgrades(),
+    imperium: createGroup('imperium', 'Imperium', [
+      { id: 'anlagen', label: '🏭 Anlagen', screen: createAnlagen() },
+      { id: 'manager', label: '👔 Manager', screen: createManager(), badge: managerBadge },
+      { id: 'upgrades', label: '⬆️ Upgrades', screen: createUpgrades(), badge: upgradeBadge },
+    ]),
     flotte: createFlotte(),
+    kolonien: createKolonien(),
     kosmos: createKosmos(),
+    kommandant: createKommandant(),
     mehr: createMehr(),
   };
-  onTabChange(() => {
+  onTabChange((tab) => {
     G.dirty = true;
     screenBox.scrollTop = 0;
+    onTabOpened(tab);
   });
   setReplaceHandler(() => applySettings());
   applySettings();
@@ -123,11 +138,12 @@ export function frameUi(dt: number): void {
   badgeTimer += dt;
   if (badgeTimer > 0.3) {
     badgeTimer = 0;
-    setTabBadge('manager', managerBadge());
-    setTabBadge('upgrades', upgradeBadge());
+    setTabBadge('imperium', managerBadge() || upgradeBadge());
     setTabBadge('kosmos', kosmosBadge());
     setTabBadge('flotte', flotteBadge());
-    setTabBadge('mehr', G.s.quests.some((q) => q.done) || canClaimDaily(G.s, G.now));
+    setTabBadge('kolonien', tabIsNew('kolonien') || koloniesBadge());
+    setTabBadge('kommandant', tabIsNew('kommandant') || kommandantBadge());
+    setTabBadge('mehr', G.s.quests.some((q) => q.done) || canClaimDaily(G.s, G.now) || weeklyClaimable(G.s));
   }
 }
 
@@ -149,6 +165,7 @@ function wireEvents(): void {
     toast('🎯', 'Mission erfüllt!', 'Hol dir deine Kristalle unter 🎯 ab.');
   });
   on('timewarp', ({ amount, hours }) => {
+    if (hours < 1) return;
     toast('⏩', `Zeitsprung ${hours} h`, `+${fmt(amount)} 🪙`, true);
   });
   on('supernova', ({ gain, planetChanged, planet }) => {
@@ -163,7 +180,7 @@ function wireEvents(): void {
       if (planetChanged) planetReveal(planet);
       else toast('💥', `Supernova! +${fmt(gain, false)} ✨`, 'Dein Imperium ist stärker als je zuvor.', true, 3500);
     }, 900);
-    openTab('anlagen');
+    openTab('imperium', 'anlagen');
   });
   on('rankUp', ({ level, gems }) => {
     if (!pending.rank) pending.rank = { from: level - 1, to: level, gems: 0 };
@@ -181,6 +198,45 @@ function wireEvents(): void {
       body: [`Stufe ${tier} von 5 geschafft. Deine dauerhafte Belohnung: <b class="good-c">${c.reward(tier)}</b>.`, 'Dein Lauf geht ganz normal weiter – ohne Einschränkung.'],
       actions: [{ label: '🎉 Weiter', cls: 'green' }],
     });
+  });
+  on('eventArrived', ({ id }) => announceEvent(id));
+  on('factionUp', ({ faction, level }) => {
+    const f = FACTION_INDEX[faction];
+    sfx.achievement();
+    haptic();
+    toast(f.emoji, `${f.name}: ${REP_NAMES[level]}!`, `Neuer Vorteil: ${f.perks[level - 1]}`, true, 4500);
+  });
+  on('colonyBuilt', ({ planet, id, level }) => {
+    const where = `Kolonie ${PLANETS[planet]?.name ?? ''}`;
+    sfx.upgrade();
+    if (!id) toast('🏙️', `${where}: Stufe ${level}`, '+1 Bauplatz und +10 % Produktion', true, 4000);
+    else {
+      const d = COLONY_BUILDING_INDEX[id];
+      toast(d?.emoji ?? '🏗️', `${d?.name ?? id} Stufe ${level} fertig`, where);
+    }
+  });
+  on('megaDone', ({ id, stage }) => {
+    const m = MEGA_INDEX[id];
+    if (!m) return;
+    sfx.achievement();
+    haptic();
+    flash(false);
+    showModal({
+      hero: m.emoji,
+      title: `${m.name}: Stufe ${stage}!`,
+      body: [`<div style="text-align:center"><b>${m.stages[stage - 1]}</b></div>`, stage < m.stages.length ? `<span class="hint">Nächste Stufe: ${m.stages[stage]}</span>` : '<span class="hint">Voll ausgebaut – ein Wunder des Universums!</span>'],
+      actions: [{ label: '🎉 Großartig', cls: 'violet' }],
+    });
+  });
+  on('weeklyNew', () => {
+    const m = weeklyMod(G.s);
+    const c = weeklyContract(G.s);
+    if (!m) return;
+    sfx.achievement();
+    toast(m.emoji, `Neue Woche: ${m.name}`, `${m.desc}${c ? ` Sonderauftrag: ${c.text} (Mehr → Ziele).` : ''}`, true, 6000);
+  });
+  on('cometShower', ({ n }) => {
+    for (let k = 0; k < n; k++) setTimeout(() => spawnComet(), 400 + k * 900);
   });
   on('numberCap', () => {
     toast('🛡️', 'Zahlen-Schutz', 'Dein Geld hat die größte Zahl erreicht, mit der das Spiel rechnen kann (1e300). Supernova und Galaxie-Sprung bringen dich weiter.', true, 6000);
@@ -202,7 +258,7 @@ function wireEvents(): void {
         actions: [{ label: '🌌 Weiter', cls: 'cyan' }],
       });
     }, 1400);
-    openTab('anlagen');
+    openTab('imperium', 'anlagen');
   });
 }
 
@@ -291,14 +347,26 @@ export function offlineDialog(r: OfflineSummary): void {
   if (r.rankAfter > r.rankBefore) lines.push(center(`⭐ Kommandanten-Level ${r.rankBefore} → ${r.rankAfter}`));
   const ready = readyMissions(G.s, Date.now());
   if (ready) lines.push(center(`🚀 ${ready} Expedition${ready === 1 ? '' : 'en'} zurück – Beute wartet in der Flotte!`));
+  const res = RES_IDS.filter((k) => r.res[k] >= 1).map((k) => `${RES_META[k].emoji} +${fmt(r.res[k], false)}`);
+  if (res.length) lines.push(center(`🪐 Kolonien: ${res.join(' · ')}`));
+  for (const m of r.mega) {
+    const d = MEGA_INDEX[m.id];
+    if (d) lines.push(center(`${d.emoji} <b>${d.name}: Stufe ${m.stage} fertig</b> – ${d.stages[m.stage - 1]}`));
+  }
+  if (r.built.length) lines.push(center(`🏗️ ${r.built.length} Kolonie-Bau${r.built.length === 1 ? '' : 'ten'} fertig geworden`));
+  if (r.labBuys) lines.push(center(`🧠 Auto-Labor: ${r.labBuys} Forschung${r.labBuys === 1 ? '' : 'en'} gekauft`));
+  const waiting = G.s.events.queue.length;
+  if (waiting) lines.push(center(`📡 ${waiting} Funkspr${waiting === 1 ? 'uch wartet' : 'üche warten'} auf deine Entscheidung`));
   const canDouble = r.runEarned > 0;
+  // kam die letzte Supernova kurz vor dem Zurückkommen, wäre der aktuelle Lauf fast 0 – dann die Gesamtsumme zeigen
+  const showRun = r.supernovas > 0 && r.runEarned >= r.earned * 0.05;
   showModal({
     hero: '🌙',
     title: 'Willkommen zurück!',
     body: [
       `Du warst <b>${fmtTime(r.seconds)}</b> weg. Deine Manager und Roboter haben weitergearbeitet:`,
-      `<div class="big-num gold-c num" style="text-align:center;margin:10px 0">+${fmt(r.supernovas ? r.runEarned : r.earned)}</div>`,
-      r.supernovas && canDouble ? center('im aktuellen Lauf seit der letzten Supernova') : '',
+      `<div class="big-num gold-c num" style="text-align:center;margin:10px 0">+${fmt(showRun ? r.runEarned : r.earned)}</div>`,
+      showRun ? center('im aktuellen Lauf seit der letzten Supernova') : r.supernovas ? center('insgesamt, vor und nach den Supernovas') : '',
       ...lines,
       r.capped ? `<span class="hint">Offline-Speicher voll nach ${fmtTime(r.counted)} – erweitere ihn im Labor (🔋) oder mit Artefakten.</span>` : '',
     ].filter(Boolean),

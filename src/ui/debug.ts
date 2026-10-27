@@ -10,6 +10,9 @@ import { toast } from './fx';
 import { spawnComet } from './comets';
 import { grantArtifact, randomArtifactOf, rollRarity } from '../core/fleet';
 import { addXp, xpForNext } from '../core/rank';
+import { RES_IDS } from '../core/colonies';
+import { pushEvent } from '../core/events';
+import { EVENTS } from '../data/events';
 
 export function initDebug(root: HTMLElement): void {
   const btn = h('button', { class: 'debug-btn', 'aria-label': 'Debug' }, '🐞');
@@ -79,6 +82,20 @@ function open(): void {
       }),
       act('⭐ +1 Rang-Level', () => addXp(s(), xpForNext(s().rank.level) - s().rank.xp)),
       act('💥 3 Supernovas gutschreiben', () => { s().totalSupernovas += 3; }),
+      act('🪐 +10.000 aller Rohstoffe', () => { for (const k of RES_IDS) s().res[k] += 10000; }),
+      act('🏗️ Bauten sofort fertig', () => {
+        for (const k in s().colonies) {
+          const c = s().colonies[k];
+          if (c.build) c.build.end = Date.now() - 1;
+          if (c.grow) c.grow = Date.now() - 1;
+        }
+        if (s().mega.build) s().mega.build!.end = Date.now() - 1;
+      }),
+      act('📡 Funkspruch jetzt', () => {
+        const pool = EVENTS.filter((e) => !e.chainOnly);
+        pushEvent(s(), pool[Math.floor(Math.random() * pool.length)].id, Date.now());
+      }),
+      act('🗓️ Neue Woche', () => { s().weekly.key = ''; }),
       { label: 'Schließen', cls: 'violet' },
     ],
   });

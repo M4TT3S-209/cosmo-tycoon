@@ -2,11 +2,13 @@
 // Auto-Käufer, Auto-Upgrader, Prüfungen und Auto-Supernova genau wie im laufenden Spiel.
 import { muteEvents, emit } from './bus';
 import { compute, ctier, newCalc, offlineCapSec, offlineEfficiency, pendingStardust } from './economy';
-import { earn } from './actions';
+import { autoLab, autoLabActive, earn } from './actions';
 import { autoOptions, autoSpend } from './autobuy';
 import { checkChallenge } from './challenges';
+import { RES_IDS, simulateColonies, type ColonyBuilt, type MegaDone } from './colonies';
+import { offlineEvents } from './events';
 import { autoSupernovaReady, supernova } from './prestige';
-import type { GameState } from './state';
+import type { GameState, Resources } from './state';
 
 /** Schrittweite: 8 % der bisherigen Laufzeit, mindestens 2 s, höchstens 10 min */
 const STEP_FRACTION = 0.08;
@@ -41,6 +43,15 @@ export interface OfflineSummary {
   challenges: [string, number][];
   /** abgelaufene Prüfungen (Countdown) */
   failed: string[];
+  /** eingetroffene Funksprüche */
+  events: number;
+  /** Rohstoffe aus den Kolonien */
+  res: Resources;
+  /** fertig gewordene Kolonie-Bauten und Megaprojekt-Stufen */
+  built: ColonyBuilt[];
+  mega: MegaDone[];
+  /** im Auto-Labor gekaufte Forschung */
+  labBuys: number;
 }
 
 export interface OfflineOptions {
@@ -67,8 +78,10 @@ export function simulateOffline(s: GameState, seconds: number, now: number, opt:
   const sum: OfflineSummary = {
     seconds, counted, capped: cap && seconds > counted, earned: 0, runEarned: 0, bought: 0, upgrades: 0, managers: 0,
     supernovas: 0, stardust: 0, planetBefore: s.planet, planetAfter: s.planet, pendingBefore: pendingStardust(s), pendingAfter: 0,
-    rankBefore: s.rank.level, rankAfter: s.rank.level, challenges: [], failed: [],
+    rankBefore: s.rank.level, rankAfter: s.rank.level, challenges: [], failed: [], events: 0,
+    res: { metal: 0, crystal: 0, deut: 0, alloy: 0, chips: 0 }, built: [], mega: [], labBuys: 0,
   };
+  const labAuto = autoLabActive(s);
   const auto = autoOptions(s);
   const start = perfNow();
   let clock = s.runTime;
@@ -104,11 +117,21 @@ export function simulateOffline(s: GameState, seconds: number, now: number, opt:
           sum.stardust += gain;
           sum.runEarned = 0;
           clock = 0;
+          if (labAuto) sum.labBuys += autoLab(s);
         }
       }
     }
   } finally {
     muteEvents(false);
+  }
+  if (labAuto) sum.labBuys += autoLab(s);
+  if (countRun) {
+    sum.events = offlineEvents(s, counted, now);
+    // Kolonien arbeiten nach Wanduhr: die ganze Abwesenheit zählt, begrenzt nur vom Lager
+    const col = simulateColonies(s, seconds, now);
+    for (const k of RES_IDS) sum.res[k] = Math.max(0, s.res[k] - col.before[k]);
+    sum.built = col.built;
+    sum.mega = col.mega;
   }
   sum.bought = s.stats.buildingsBought - before.bought;
   sum.upgrades = s.stats.upgradesBought - before.upgrades;
@@ -121,7 +144,7 @@ export function simulateOffline(s: GameState, seconds: number, now: number, opt:
 }
 
 /** Zeitsprung (Shop, tägliche Belohnung): volle Effizienz, kein Deckel. Gibt das verdiente Geld zurück. */
-export function timeWarp(s: GameState, hours: number, now: number): number {
+export function timeWarp(s: GameState, hours: number, now: number, silent = false): number {
   const c = compute(s, now, scratch);
   let amount: number;
   if (c.baseIncome > 0) {
@@ -134,6 +157,6 @@ export function timeWarp(s: GameState, hours: number, now: number): number {
     earn(s, amount);
   }
   s.stats.timeWarps++;
-  emit('timewarp', { amount, hours });
+  if (!silent) emit('timewarp', { amount, hours });
   return amount;
 }

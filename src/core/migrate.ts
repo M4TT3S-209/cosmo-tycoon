@@ -3,6 +3,7 @@ import { PLANETS } from '../data/planets';
 import { muteEvents } from './bus';
 import { achievementCount } from './economy';
 import { addXp, syncShips } from './rank';
+import { ensureColonies } from './colonies';
 import type { GameState } from './state';
 
 /** Rang-XP, die ein v1-Spielstand rückwirkend für bisherige Leistungen bekommt */
@@ -27,7 +28,12 @@ export function migrate(s: GameState, from: number): void {
       muteEvents(false);
     }
   }
-  // immer: neue Hangar-Plätze mit Schiffen füllen, bestPlanet nachziehen
+  if (from < 3) {
+    // Version 3: der erste Funkspruch kommt nach zwei Minuten
+    s.events.nextIn = Math.min(s.events.nextIn, 120);
+  }
+  // immer: neue Hangar-Plätze mit Schiffen füllen, bestPlanet nachziehen, Kolonien anlegen
   s.stats.bestPlanet = Math.max(s.stats.bestPlanet, s.planet);
   syncShips(s);
+  ensureColonies(s);
 }

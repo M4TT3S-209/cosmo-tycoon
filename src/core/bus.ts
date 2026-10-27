@@ -22,6 +22,15 @@ export interface GameEvents {
   challengeDone: { id: string; tier: number };
   challengeFailed: { id: string };
   numberCap: Record<string, never>;
+  talent: { id: string };
+  ability: { id: string };
+  cometShower: { n: number };
+  eventArrived: { id: string };
+  factionUp: { faction: string; level: number };
+  /** Kolonie-Bau fertig (id leer = Kolonie-Stufe) */
+  colonyBuilt: { planet: number; id: string; level: number };
+  megaDone: { id: string; stage: number };
+  weeklyNew: { key: string };
 }
 
 export type CometKind = 'cash' | 'frenzy' | 'speed' | 'gems';

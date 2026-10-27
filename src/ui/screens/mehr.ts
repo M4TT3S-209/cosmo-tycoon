@@ -7,6 +7,9 @@ import { fmt, fmtInt, fmtMult, fmtTime, setNotation } from '../../core/format';
 import { canClaimDaily, claimDaily, claimQuest, nextDailyDay, questProgress, questText } from '../../core/meta';
 import { exportCode, hasPreUpdateBackup, importCode, loadPreUpdateBackup, saveGame, wipeSave } from '../../core/save';
 import { defaultState } from '../../core/state';
+import { megaStage } from '../../core/talentfx';
+import { claimWeekly, weekEndsIn, weeklyClaimable, weeklyContract, weeklyMod, weeklyProgress, weeklyRewardEm } from '../../core/weekly';
+import { WEEKLY_REWARD } from '../../data/weekly';
 import { G, isIOS, isStandalone } from '../ctx';
 import { h, setClass, setScale, setText, clear } from '../dom';
 import { burstAt, toast } from '../fx';
@@ -22,7 +25,7 @@ const SUBS = [
   { id: 'optionen', label: '⚙️' },
 ];
 
-export const APP_VERSION = '2.1.1';
+export const APP_VERSION = '3.0.0';
 
 let onReplaceState: (() => void) | null = null;
 /** wird von app.ts gesetzt: nach Import/Reset alles neu starten */
@@ -55,7 +58,7 @@ export function createMehr(): Screen {
     el.appendChild(h('div', { class: 'sticky' }, seg));
     updaters.push(() => {
       const s = G.s;
-      setClass(subBadges.missionen, 'on', s.quests.some((q) => q.done) || canClaimDaily(s, G.now));
+      setClass(subBadges.missionen, 'on', s.quests.some((q) => q.done) || canClaimDaily(s, G.now) || weeklyClaimable(s));
     });
     switch (G.sub.mehr) {
       case 'shop': buildShop(); break;
@@ -97,8 +100,61 @@ export function createMehr(): Screen {
     });
   }
 
+  function buildWeekly(): void {
+    const s = G.s;
+    const mod = weeklyMod(s);
+    const c = weeklyContract(s);
+    if (!mod || !c) return;
+    const fill = h('i');
+    const ptxt = h('span', { class: 'num' }, '');
+    const left = h('span', { class: 'num' }, '');
+    const btn = h('button', { class: 'btn block green', style: 'margin-top:10px' }, '');
+    btn.addEventListener('click', () => {
+      const lines = claimWeekly(G.s);
+      if (lines) {
+        sfx.claim();
+        haptic();
+        burstAt(btn, '#38bdf8', 32, 'spark', 1.2);
+        toast('📅', 'Sonderauftrag erfüllt!', lines.join(' · '), true, 5000);
+      } else sfx.error();
+    });
+    const week = s.weekly.key.split('-W')[1] ?? '';
+    el.appendChild(h('div', { class: 'card glow weekly-card', style: '--c:#38bdf8' },
+      h('div', { class: 'row' },
+        h('div', { class: 'icon-round', style: '--c:#38bdf8' }, mod.emoji),
+        h('div', { class: 'col' },
+          h('div', { class: 'title' }, `Woche ${Number(week) || ''}: ${mod.name}`),
+          h('div', { class: 'sub' }, mod.desc),
+          h('div', { class: 'hint' }, '⏳ Neue Woche in ', left),
+        ),
+      ),
+      h('div', { class: 'section-title', style: 'margin:10px 0 4px' }, 'Sonderauftrag'),
+      h('div', { class: 'row' },
+        h('span', { style: 'font-size:22px' }, c.emoji),
+        h('div', { class: 'col' },
+          h('div', { style: 'font-weight:800' }, c.text),
+          h('div', { class: 'progress' }, fill),
+          h('div', { class: 'sub' }, ptxt, ` · Belohnung: ${WEEKLY_REWARD.gems} 💎, ${fmt(weeklyRewardEm(s), false)} ⚗️ und ein Artefakt`),
+        ),
+      ),
+      btn,
+    ));
+    updaters.push(() => {
+      const st = G.s;
+      const p = weeklyProgress(st);
+      setScale(fill, p / c.goal);
+      setText(ptxt, `${p}/${c.goal}`);
+      setText(left, fmtTime(weekEndsIn(G.now) / 1000));
+      const ready = weeklyClaimable(st);
+      setClass(btn, 'off', !ready);
+      setText(btn, st.weekly.claimed ? '✅ Abgeholt – nächste Woche gibt es einen neuen Auftrag' : ready ? '🎁 Belohnung abholen' : `Noch ${c.goal - p} bis zur Belohnung`);
+      if (st.weekly.contract !== c.id) G.dirty = true;
+    });
+  }
+
   function buildQuests(): void {
     buildRank();
+    buildWeekly();
     const s = G.s;
     const today = canClaimDaily(s, G.now);
     const day = nextDailyDay(s, G.now);
@@ -303,6 +359,8 @@ export function createMehr(): Screen {
     row('⭐ Kommandanten-Rang', pm.rank);
     row('🏺 Artefakte', pm.artifacts);
     row('🏅 Prüfungen', pm.challenges);
+    row('👤 Talente', pm.talents);
+    row('🪐 Kolonien & Dyson', pm.colonies);
     mk.append(h('span', { style: 'color:var(--text);font-weight:800' }, 'Gesamt'), h('span', { class: 'num gold-c' }, fmtMult(pm.total)));
     el.appendChild(h('div', { class: 'card' }, h('div', { class: 'title', style: 'margin-bottom:8px' }, '✖️ Multiplikatoren'), mk));
   }
@@ -337,6 +395,7 @@ export function createMehr(): Screen {
     });
     toggle('Auto-Käufer', 'Kauft Anlagen nach Kosten und Nutzen, achtet auf Meilensteine – auch offline', () => G.s.settings.autoBuy, (v) => { G.s.settings.autoBuy = v; }, (s.lab.autobuy ?? 0) > 0);
     toggle('Auto-Upgrader', 'Kauft Upgrades & Manager – auch offline', () => G.s.settings.autoUpgrade, (v) => { G.s.settings.autoUpgrade = v; }, (s.lab.autoupgrade ?? 0) > 0);
+    toggle('Auto-Labor', 'Kauft Forschung im Labor automatisch, günstigste zuerst – auch offline (Quantenrechner Stufe 3)', () => G.s.settings.autoLab, (v) => { G.s.settings.autoLab = v; }, megaStage(s, 'rechner') >= 3);
     toggle('Auto-Supernova', 'Löst aus, wenn sich der Sternenstaub verdoppelt oder der Lauf kaum noch wächst – auch offline', () => G.s.settings.autoSupernova, (v) => { G.s.settings.autoSupernova = v; }, (s.qperks.qauto ?? 0) > 0);
     el.appendChild(box);
 
@@ -365,12 +424,13 @@ export function createMehr(): Screen {
       ));
     }
 
-    if (hasPreUpdateBackup()) {
+    const backupVersion = hasPreUpdateBackup();
+    if (backupVersion) {
       const restore = h('button', { class: 'btn small ghost' }, '🛟 Stand vor dem Update laden');
       restore.addEventListener('click', () => restoreDialog());
       el.appendChild(h('div', { class: 'card' },
         h('div', { class: 'title' }, '🛟 Sicherung vor dem Update'),
-        h('div', { class: 'sub', style: 'margin:4px 0 10px' }, 'Vor dem Update auf Version 2 wurde dein alter Spielstand unverändert gesichert. Nur für den Notfall – normalerweise brauchst du das nicht.'),
+        h('div', { class: 'sub', style: 'margin:4px 0 10px' }, `Vor dem Update auf Version ${backupVersion + 1} wurde dein alter Spielstand unverändert gesichert. Nur für den Notfall – normalerweise brauchst du das nicht.`),
         restore,
       ));
     }

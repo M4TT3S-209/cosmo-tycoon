@@ -3,6 +3,10 @@ import { PLANETS } from '../data/planets';
 import { fmt, fmtClock } from '../core/format';
 import { canClaimDaily } from '../core/meta';
 import { xpForNext } from '../core/rank';
+import { abilityReadyIn, abilityUnlocked, useAbility } from '../core/commander';
+import { ABILITY_INDEX } from '../data/talents';
+import { toast } from './fx';
+import { openNextEvent } from './events';
 import { G, openTab, onTabChange, type TabId } from './ctx';
 import { h, setText, setClass, sphereEl, clear } from './dom';
 import { sfx, haptic } from '../audio/sfx';
@@ -19,6 +23,11 @@ let questBadge: HTMLElement;
 let rankLevel: HTMLElement;
 let rankRing: HTMLElement;
 let boostBox: HTMLElement;
+let abilityBar: HTMLElement;
+let eventChip: HTMLElement;
+let eventCount: HTMLElement;
+let abilityKey = '';
+const abilityBtns: { id: string; el: HTMLElement }[] = [];
 let shownCash = 0;
 let lastPlanet = -1;
 let boostKey = '';
@@ -34,6 +43,9 @@ export function buildHud(): HTMLElement {
   rankLevel = h('span', { class: 'num' }, '1');
   rankRing = h('span', { class: 'rank-ring' }, '⭐');
   boostBox = h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' });
+  abilityBar = h('div', { class: 'ability-bar' });
+  eventCount = h('b', { class: 'num' }, '');
+  eventChip = h('button', { class: 'event-chip', 'aria-label': 'Funksprüche', onClick: () => { sfx.click(); haptic(); openNextEvent(); } }, '📡 ', eventCount);
 
   planetChip = h('button', { class: 'chip', onClick: () => go('kosmos', 'planeten') }, planetName);
   dustChip = h('button', { class: 'chip dust', onClick: () => go('kosmos', 'nova') }, '✨', dustEl);
@@ -45,7 +57,7 @@ export function buildHud(): HTMLElement {
     { class: 'hud' },
     h('div', { class: 'hud-top' }, planetChip, dustChip, questChip, gemChip),
     h('div', { class: 'hud-cash' }, h('span', { class: 'coin' }, '¢'), cashEl),
-    h('div', { class: 'hud-sub' }, incomeEl, boostBox),
+    h('div', { class: 'hud-sub' }, incomeEl, boostBox, h('div', { class: 'hud-right' }, eventChip, abilityBar)),
   );
 }
 
@@ -108,16 +120,63 @@ export function updateHud(dt: number): void {
   }
   // abgelaufene Boosts aufräumen
   if (s.boosts.length !== active.length) s.boosts = active;
+
+  updateAbilityBar();
+  const waiting = s.events.queue.length;
+  eventChip.style.display = waiting ? '' : 'none';
+  setText(eventCount, String(waiting));
+}
+
+// ---- Fähigkeiten-Leiste --------------------------------------------------------
+
+function updateAbilityBar(): void {
+  const s = G.s;
+  const ids = s.commander.abilities.filter((id) => ABILITY_INDEX[id] && abilityUnlocked(s, ABILITY_INDEX[id]));
+  const key = ids.join(',');
+  if (key !== abilityKey) {
+    abilityKey = key;
+    clear(abilityBar);
+    abilityBtns.length = 0;
+    for (const id of ids) {
+      const a = ABILITY_INDEX[id];
+      const el = h('button', { class: 'ability-btn', 'aria-label': a.name }, a.emoji);
+      el.addEventListener('click', () => {
+        const left = abilityReadyIn(G.s, id, Date.now());
+        if (left > 0) {
+          sfx.error();
+          toast(a.emoji, a.name, `Bereit in ${fmtClock(left)}`);
+          return;
+        }
+        const r = useAbility(G.s, id, Date.now());
+        if (r.ok) {
+          sfx.claim();
+          haptic();
+          toast(a.emoji, a.name + '!', r.text, true);
+        } else {
+          sfx.error();
+          toast(a.emoji, a.name, r.text);
+        }
+      });
+      abilityBar.appendChild(el);
+      abilityBtns.push({ id, el });
+    }
+  }
+  for (const b of abilityBtns) {
+    const a = ABILITY_INDEX[b.id];
+    const left = abilityReadyIn(s, b.id, G.now);
+    b.el.style.setProperty('--cd', String(Math.min(1, left / a.cooldown)));
+    setClass(b.el, 'ready', left <= 0);
+  }
 }
 
 // ---- Tab-Leiste ------------------------------------------------------------
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
-  { id: 'anlagen', icon: '🏭', label: 'Anlagen' },
-  { id: 'manager', icon: '👔', label: 'Manager' },
-  { id: 'upgrades', icon: '⬆️', label: 'Upgrades' },
+  { id: 'imperium', icon: '🏭', label: 'Imperium' },
   { id: 'flotte', icon: '🚀', label: 'Flotte' },
+  { id: 'kolonien', icon: '🪐', label: 'Kolonien' },
   { id: 'kosmos', icon: '🌟', label: 'Kosmos' },
+  { id: 'kommandant', icon: '👤', label: 'Kommando' },
   { id: 'mehr', icon: '☰', label: 'Mehr' },
 ];
 const tabEls: Record<string, { btn: HTMLElement; badge: HTMLElement }> = {};

@@ -322,7 +322,7 @@ export function createFlotte(): Screen {
         let right: HTMLElement;
         if (lvl >= MODULE_MAX) right = h('span', { class: 'owned-tag' }, 'MAX');
         else {
-          const cost = moduleCost(lvl, mod.id);
+          const cost = moduleCost(lvl, mod.id, G.s);
           const b = h('button', { class: 'btn small' }, `${fmt(cost, false)} ⚗️`);
           b.addEventListener('click', () => {
             if (upgradeModule(G.s, i, mod.id)) {

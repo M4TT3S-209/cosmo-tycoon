@@ -3,7 +3,7 @@ import { PLANETS, PLANET_MULT } from '../../data/planets';
 import { QUANTUM_PERKS } from '../../data/quantum';
 import { buyLab, buyQuantum, labAvailable } from '../../core/actions';
 import {
-  STARDUST_BONUS, QUANTUM_PASSIVE, QUANTUM_K, canGalaxyJump, ctier, earningsForDust, earningsForNextDust, lab, pendingQuantum,
+  STARDUST_BONUS, QUANTUM_PASSIVE, QUANTUM_K, canGalaxyJump, ctier, earningsForDust, earningsForNextDust, lab, labCost, pendingQuantum,
   pendingStardust, permanentMults, planetNeed, qlvl,
 } from '../../core/economy';
 import { fmt, fmtClock, fmtMult, fmtPct } from '../../core/format';
@@ -179,7 +179,7 @@ export function createKosmos(): Screen {
         if (maxed) right = h('span', { class: 'owned-tag' }, 'MAX');
         else if (!available) right = h('span', { class: 'tag' }, '🔒');
         else {
-          const cost = node.cost(lvl);
+          const cost = labCost(s, node, lvl);
           const btn = h('button', { class: 'btn small violet' }, `${fmt(cost, false)} ✨`);
           btn.addEventListener('click', () => {
             if (buyLab(G.s, node.id)) {
@@ -460,7 +460,7 @@ export function kosmosBadge(): boolean {
   // Labor-Knoten bezahlbar?
   for (const n of LAB_NODES) {
     const l = lab(s, n.id);
-    if (l < n.maxLevel && labAvailable(s, n.id) && n.cost(l) <= s.stardust) return true;
+    if (l < n.maxLevel && labAvailable(s, n.id) && labCost(s, n, l) <= s.stardust) return true;
   }
   return false;
 }

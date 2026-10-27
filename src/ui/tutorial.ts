@@ -21,6 +21,13 @@ interface Step {
 
 const q = (sel: string) => () => document.querySelector(sel);
 
+/** Ziel im Imperium-Tab: erst den Tab, dann den Unterbereich, dann das Element darin */
+function imperiumTarget(sub: string, sel: string | null): Element | null {
+  if (G.tab !== 'imperium') return tabButton('imperium');
+  if (G.sub.imperium !== sub) return document.querySelector(`.group-seg [data-sub="${sub}"]`);
+  return sel ? document.querySelector(sel) : null;
+}
+
 const STEPS: Step[] = [
   {
     text: 'Tippe auf den Schrottsammler, um Weltraumschrott zu sammeln! 👆',
@@ -41,14 +48,14 @@ const STEPS: Step[] = [
   },
   {
     text: 'Stelle einen Manager ein – er arbeitet für dich, sogar wenn du offline bist!',
-    target: () => (G.tab === 'manager' ? document.querySelector('.mgr-card .btn') : tabButton('manager')),
+    target: () => imperiumTarget('manager', '.mgr-card .btn'),
     when: (s) => s.cash >= MANAGERS[0].cost,
     done: (s) => s.managers.some(Boolean),
   },
   {
     text: 'Perfekt! Zurück zu deinen Anlagen – baue dein Imperium aus. 🚀',
-    target: () => (G.tab === 'anlagen' ? null : tabButton('anlagen')),
-    done: () => G.tab === 'anlagen',
+    target: () => imperiumTarget('anlagen', null),
+    done: () => G.tab === 'imperium' && G.sub.imperium === 'anlagen',
   },
 ];
 
@@ -69,8 +76,29 @@ const NEW_IN_21 = [
   '🏗️ <b>Faire Preise:</b> Alle Anlagen werden pro Stufe 9 % teurer – eine bessere Anlage ist jetzt immer teurer als eine schwächere. Bohrer bis Mondbasis werden dadurch viel günstiger.',
 ];
 
+const NEW_IN_3 = [
+  '👤 <b>Kommando:</b> Für jedes Kommandanten-Level gibt es einen Talentpunkt (bei dir schon alle rückwirkend). Vier Zweige mit Entweder-oder-Entscheidungen und sechs aktive Fähigkeiten – die liegen oben in deiner Leiste.',
+  '🪐 <b>Kolonien:</b> Jeder erreichte Planet ist jetzt eine Kolonie mit eigener Spezialität. Baue Minen, Kraftwerke, Schmieden und Chipfabriken – sie produzieren rund um die Uhr, auch offline.',
+  '🏗️ <b>7 Megaprojekte:</b> Dyson-Schwarm (Einkommen bis ×32), Sternentor, Quantenrechner mit Auto-Labor, Chronosphäre, Archiv, Terraformer und Börse – jedes in 5 Stufen.',
+  '📡 <b>Funksprüche:</b> Unterwegs erreichen dich Nachrichten mit Entscheidungen – manchmal riskant, manchmal mit Fortsetzung. Vier Fraktionen merken sich, wie du handelst, und haben einen Wochen-Shop.',
+  '🗓️ <b>Wochen-Ereignis:</b> Jede Woche gelten andere Galaxie-Bedingungen – dazu ein Sonderauftrag mit Kristallen, Exotischer Materie und einem Artefakt (Mehr → Ziele).',
+  '🧭 <b>Neue Navigation:</b> Anlagen, Manager und Upgrades findest du jetzt zusammen unter 🏭 Imperium.',
+];
+
 export function showWhatsNew(): void {
   const s = G.s;
+  if (!s.tutorial.flags.v3intro) {
+    s.tutorial.flags.v2intro = true;
+    s.tutorial.flags.v21intro = true;
+    s.tutorial.flags.v3intro = true;
+    showModal({
+      hero: '🌌',
+      title: 'Cosmo Tycoon 3.0 – Imperium',
+      body: ['Dein Spielstand ist vollständig erhalten – und dein Imperium wird größer:', ...NEW_IN_3, 'Neue Bereiche sind mit einem roten Punkt markiert. Beim ersten Öffnen erkläre ich dir alles.'],
+      actions: [{ label: '🚀 Auf ins neue Imperium!', cls: 'violet' }],
+    });
+    return;
+  }
   if (!s.tutorial.flags.v2intro) {
     s.tutorial.flags.v2intro = true;
     s.tutorial.flags.v21intro = true;

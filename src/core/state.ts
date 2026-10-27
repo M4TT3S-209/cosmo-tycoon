@@ -1,7 +1,7 @@
 import { BUILDING_COUNT } from '../data/buildings';
 import type { Notation } from './format';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export interface BuildingState {
   owned: number;
@@ -55,6 +55,38 @@ export interface ArtifactState {
   shards: number;
 }
 
+// ---- Version 3: Kolonien, Kommandant, Funksprüche, Fraktionen -----------------
+
+export interface ColonyBuilding {
+  id: string;
+  level: number;
+}
+
+export interface ColonyState {
+  level: number;
+  /** Bauplätze; null = frei */
+  slots: (ColonyBuilding | null)[];
+  /** laufender Bau auf einem Platz (Wanduhr-Ende in ms) */
+  build: { slot: number; id: string; to: number; end: number } | null;
+  /** Ausbau der Kolonie selbst: fertig um (ms), 0 = keiner */
+  grow: number;
+}
+
+export interface Resources {
+  metal: number;
+  crystal: number;
+  deut: number;
+  alloy: number;
+  chips: number;
+}
+export type ResId = keyof Resources;
+
+export interface PendingEvent {
+  id: string;
+  /** eingetroffen um (ms) */
+  at: number;
+}
+
 /** 0 = bis zum nächsten Meilenstein, -1 = Max */
 export type BuyMode = 1 | 10 | 100 | 0 | -1;
 
@@ -68,6 +100,8 @@ export interface Settings {
   autoBuy: boolean;
   autoUpgrade: boolean;
   autoSupernova: boolean;
+  /** Auto-Labor (Quantenrechner Stufe 3) */
+  autoLab: boolean;
   buyMode: BuyMode;
 }
 
@@ -90,6 +124,11 @@ export interface Stats {
   /** höchster je erreichter Planet (auch über Galaxie-Sprünge hinweg) */
   bestPlanet: number;
   challengesDone: number;
+  eventsAnswered: number;
+  abilitiesUsed: number;
+  colonyBuilds: number;
+  megaStages: number;
+  weeklyDone: number;
 }
 
 export interface GameState {
@@ -144,6 +183,41 @@ export interface GameState {
   challengeTiers: Record<string, number>;
   rank: { level: number; xp: number };
 
+  /** Talente (id → Stufe), Fähigkeiten, Abklingzeiten (Wanduhr ms) */
+  commander: {
+    talents: Record<string, number>;
+    bonusPoints: number;
+    respecs: number;
+    abilities: string[];
+    cooldowns: Record<string, number>;
+    /** Geistesblitz aktiv: nächste Supernova bringt mehr */
+    insight: boolean;
+  };
+  /** Kolonien je Planet-Index */
+  colonies: Record<string, ColonyState>;
+  res: Resources;
+  mega: {
+    stages: Record<string, number>;
+    build: { id: string; stage: number; end: number } | null;
+    /** Tag der letzten Börsen-Dividende */
+    dividend: string;
+  };
+  events: {
+    queue: PendingEvent[];
+    /** Sekunden aktiven Spiels bis zum nächsten Funkspruch */
+    nextIn: number;
+    /** wie oft schon erlebt */
+    seen: Record<string, number>;
+    /** Ketten: Folge-Ereignis-ID → frühestens ab (ms) */
+    chains: Record<string, number>;
+  };
+  /** Ruf je Fraktion */
+  factions: Record<string, number>;
+  /** Fraktions-Shop: Käufe je Woche und Angebot */
+  factionBuys: Record<string, number>;
+  /** Wochen-Ereignis: Kalenderwoche, Zählerstand zu Wochenbeginn, Auftrag */
+  weekly: { key: string; base: number; claimed: boolean; contract: string };
+
   stats: Stats;
   settings: Settings;
   tutorial: { step: number; flags: Record<string, boolean> };
@@ -188,6 +262,14 @@ export function defaultState(now = Date.now()): GameState {
     challenge: { active: '', goal: 0 },
     challengeTiers: {},
     rank: { level: 1, xp: 0 },
+    commander: { talents: {}, bonusPoints: 0, respecs: 0, abilities: [], cooldowns: {}, insight: false },
+    colonies: {},
+    res: { metal: 0, crystal: 0, deut: 0, alloy: 0, chips: 0 },
+    mega: { stages: {}, build: null, dividend: '' },
+    events: { queue: [], nextIn: 600, seen: {}, chains: {} },
+    factions: {},
+    factionBuys: {},
+    weekly: { key: '', base: 0, claimed: false, contract: '' },
     stats: {
       taps: 0,
       cometsTapped: 0,
@@ -206,6 +288,11 @@ export function defaultState(now = Date.now()): GameState {
       lastDay: '',
       bestPlanet: 0,
       challengesDone: 0,
+      eventsAnswered: 0,
+      abilitiesUsed: 0,
+      colonyBuilds: 0,
+      megaStages: 0,
+      weeklyDone: 0,
     },
     settings: {
       sound: true,
@@ -216,6 +303,7 @@ export function defaultState(now = Date.now()): GameState {
       autoBuy: true,
       autoUpgrade: true,
       autoSupernova: true,
+      autoLab: true,
       buyMode: 1,
     },
     tutorial: { step: 0, flags: {} },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { defaultState } from '../src/core/state';
+import { SAVE_VERSION, defaultState } from '../src/core/state';
 import { deserialize, exportCode, importCode, serialize } from '../src/core/save';
 import { compute, newCalc, offlineCapSec, buildingCost, pendingStardust } from '../src/core/economy';
 import { simulateOffline } from '../src/core/offline';
@@ -48,7 +48,7 @@ describe('Migration v1 → v2 (Spielstand bleibt erhalten)', () => {
     expect(s.gems).toBeGreaterThanOrEqual(old.gems);
   });
   it('neue Systeme sind vorbereitet', () => {
-    expect(s.version).toBe(2);
+    expect(s.version).toBe(SAVE_VERSION);
     expect(s.rank.level).toBeGreaterThan(1);
     expect(s.fleet.ships.length).toBe(hangarSlots(s));
     expect(s.stats.bestPlanet).toBe(old.planet);

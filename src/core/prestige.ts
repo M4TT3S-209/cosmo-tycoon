@@ -5,6 +5,7 @@ import { canGalaxyJump, lab, pendingQuantum, pendingStardust, planetFor, qlvl, s
 import { regenerateQuests } from './meta';
 import { XP, addXp, syncShips } from './rank';
 import { cap } from './safe';
+import { megaStage } from './talentfx';
 import type { GameState } from './state';
 
 /** Setzt den aktuellen Lauf zurück (Geld, Anlagen, Upgrades, ggf. Manager) */
@@ -25,8 +26,13 @@ export function resetRun(s: GameState): void {
 }
 
 export function supernova(s: GameState): boolean {
-  const gain = pendingStardust(s);
+  let gain = pendingStardust(s);
   if (gain < 1) return false;
+  // Fähigkeit „Geistesblitz“: diese Supernova bringt 25 % mehr
+  if (s.commander.insight) {
+    gain = Math.floor(cap(gain * 1.25));
+    s.commander.insight = false;
+  }
   const runTime = s.runTime;
   s.stardust = cap(s.stardust + gain);
   s.stardustEarned = cap(s.stardustEarned + gain);
@@ -50,6 +56,8 @@ export function supernova(s: GameState): boolean {
   return true;
 }
 
+const TOR_KEEP = ['keepmgr', 'quickstart', 'autobuy', 'autoupgrade'];
+
 export function galaxyJump(s: GameState): boolean {
   if (!canGalaxyJump(s)) return false;
   const gain = pendingQuantum(s);
@@ -62,6 +70,8 @@ export function galaxyJump(s: GameState): boolean {
     const v = Math.floor(s.lab[k] * keep);
     if (v > 0) nextLab[k] = v;
   }
+  // Sternentor Stufe 3: die Automatik-Forschung bleibt
+  if (megaStage(s, 'tor') >= 3) for (const k of TOR_KEEP) if (s.lab[k]) nextLab[k] = Math.max(nextLab[k] ?? 0, s.lab[k]);
   s.lab = nextLab;
   s.stardust = 0;
   s.stardustEarned = 0;

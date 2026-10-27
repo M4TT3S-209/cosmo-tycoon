@@ -6,7 +6,8 @@ import { UPGRADES } from '../data/upgrades';
 import { addGems, earn, grantBoost, timeWarp } from './actions';
 import { XP, addXp } from './rank';
 import { emit } from './bus';
-import { compute, managerCost, newCalc, nextMilestone, offlineCapSec, offlineEfficiency } from './economy';
+import { compute, managerCost, newCalc, nextMilestone, offlineCapSec, offlineEfficiency, upgradeCost } from './economy';
+import { talentBonus } from './talentfx';
 import { fmt } from './format';
 import { MAX_VALUE } from './safe';
 import type { GameState, Quest, QuestType } from './state';
@@ -80,7 +81,7 @@ export function genQuest(s: GameState, exclude: QuestType[]): Quest {
   const hi = highestOwned(s);
   const options: QuestType[] = ['buy', 'comet'];
   if (s.totalEarnings < MAX_VALUE / 1e6) options.push('earn');
-  if (UPGRADES.some((u) => !s.upgrades[u.id] && u.cost < Math.max(s.cash, c.potential * 1800) * 3)) options.push('upgrade');
+  if (UPGRADES.some((u) => !s.upgrades[u.id] && upgradeCost(s, u) < Math.max(s.cash, c.potential * 1800) * 3)) options.push('upgrade');
   if (s.buildings.some((b, i) => b.owned > 0 && !s.managers[i])) options.push('tap');
   options.push('milestone');
   const mgrTarget = s.managers.findIndex((m, i) => !m && s.buildings[i].owned > 0 && managerCost(i) < Math.max(s.cash, c.potential * 1200) * 4);
@@ -175,6 +176,16 @@ export function dayKey(t: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Kalenderwoche nach ISO (Montag bis Sonntag, Ortszeit), z. B. "2026-W43" */
+export function weekKey(t: number): string {
+  const d = new Date(t);
+  const weekday = (d.getDay() + 6) % 7;
+  const thursday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - weekday + 3);
+  const jan4 = new Date(thursday.getFullYear(), 0, 4);
+  const week = 1 + Math.round((Math.round((thursday.getTime() - jan4.getTime()) / 86400000) - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+  return `${thursday.getFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
 export function canClaimDaily(s: GameState, now: number): boolean {
   return s.daily.last !== dayKey(now);
 }
@@ -193,7 +204,7 @@ export function claimDaily(s: GameState, now: number): DailyReward | null {
   s.daily.streak = day;
   s.daily.last = dayKey(now);
   const r = DAILY[day - 1];
-  if (r.gems) addGems(s, r.gems);
+  if (r.gems) addGems(s, r.gems * talentBonus(s).dailyMult);
   if (r.boost) grantBoost(s, r.boost, now);
   if (r.warp) timeWarp(s, r.warp, now);
   addXp(s, XP.daily);

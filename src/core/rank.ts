@@ -1,6 +1,7 @@
 // Kommandanten-Rang: XP, Level 1–100, Freischaltungen (Hangar- und Artefakt-Plätze)
 import { emit } from './bus';
 import { ctier, gemMult } from './economy';
+import { talentBonus } from './talentfx';
 import type { GameState } from './state';
 
 export const RANK_MAX = 100;
@@ -47,11 +48,11 @@ export function fleetUnlocked(s: GameState): boolean {
 }
 
 export function hangarSlots(s: GameState): number {
-  return 1 + HANGAR_UNLOCKS.filter((l) => s.rank.level >= l).length + (ctier(s, 'countdown') >= 1 ? 1 : 0);
+  return 1 + HANGAR_UNLOCKS.filter((l) => s.rank.level >= l).length + (ctier(s, 'countdown') >= 1 ? 1 : 0) + talentBonus(s).hangar;
 }
 
 export function artifactSlots(s: GameState): number {
-  return BASE_ARTIFACT_SLOTS + ARTIFACT_SLOT_UNLOCKS.filter((l) => s.rank.level >= l).length;
+  return BASE_ARTIFACT_SLOTS + ARTIFACT_SLOT_UNLOCKS.filter((l) => s.rank.level >= l).length + talentBonus(s).artSlots;
 }
 
 /** Fügt Schiffe für neu freigeschaltete Hangar-Plätze hinzu (entfernt nie welche) */
@@ -72,7 +73,7 @@ export function nextUnlock(s: GameState): string | null {
 
 export function addXp(s: GameState, amount: number): void {
   if (!(amount > 0) || s.rank.level >= RANK_MAX) return;
-  s.rank.xp += amount;
+  s.rank.xp += Math.round(amount * talentBonus(s).xp);
   while (s.rank.level < RANK_MAX && s.rank.xp >= xpForNext(s.rank.level)) {
     s.rank.xp -= xpForNext(s.rank.level);
     s.rank.level++;

@@ -8,7 +8,7 @@ import { UPGRADES, type UpgradeDef } from '../data/upgrades';
 import { buyBuildingCount, buyUpgrade, hireManager } from './actions';
 import {
   buildingBlocked, buildingCost, chalActive, compute, ctier, empireMultPer, isManaged, lab, maxAffordable,
-  milestoneCount, newCalc, nextEmpireMilestone, nextMilestone, rateAt,
+  milestoneCount, newCalc, nextEmpireMilestone, nextMilestone, rateAt, upgradeCost,
 } from './economy';
 import { cap } from './safe';
 import type { GameState } from './state';
@@ -85,7 +85,7 @@ function refresh(s: GameState, now: number, o: AutoOptions): void {
   for (let i = 0; i < BUILDING_COUNT; i++) {
     const own = buildingBlocked(s, i) ? 0 : s.buildings[i].owned;
     owned[i] = own;
-    rate[i] = rateAt(calc.unit[i], own);
+    rate[i] = rateAt(calc.unit[i], own, calc.msBase);
     potential += rate[i];
     if (isManaged(s, i)) managed += rate[i];
   }
@@ -124,7 +124,7 @@ function prepareSingles(s: GameState): number {
     const room = next === null ? Infinity : next - 1 - own;
     if (room < 1) continue;
     const c0 = buildingCost(s, i, 1);
-    const d = cap(calc.unit[i] * Math.pow(2, milestoneCount(own)));
+    const d = cap(calc.unit[i] * Math.pow(calc.msBase, milestoneCount(own)));
     segRoom[i] = room;
     segLogC0[i] = Math.log(c0);
     segLogD[i] = Math.log(d);
@@ -219,7 +219,7 @@ function bestLump(s: GameState, o: AutoOptions): Lump | null {
       if (!buyable(s, i)) continue;
       const M = nextMilestone(owned[i]);
       if (M === null) continue;
-      const after = rateAt(calc.unit[i], M);
+      const after = rateAt(calc.unit[i], M, calc.msBase);
       let gain = after - rate[i];
       // vollendet dieser Meilenstein-Kauf zugleich den Imperium-Meilenstein?
       if (open && below === 1 && belowIdx === i && M >= E!) gain = empMult * (potential - rate[i] + after) - potential;
@@ -232,7 +232,7 @@ function bestLump(s: GameState, o: AutoOptions): Lump | null {
         const own = s.buildings[i].owned;
         if (own < E!) {
           cost += buildingCost(s, i, E! - own);
-          after += rateAt(calc.unit[i], E!);
+          after += rateAt(calc.unit[i], E!, calc.msBase);
         } else after += rate[i];
       }
       consider('empire', -1, E!, null, cost, empMult * after - potential);
@@ -246,7 +246,7 @@ function bestLump(s: GameState, o: AutoOptions): Lump | null {
       if (s.upgrades[u.id]) continue;
       if (++n > UPGRADE_LOOKAHEAD) break;
       const gain = u.target >= 0 ? (u.mult - 1) * rate[u.target] : (u.mult * proto - 1) * potential;
-      consider('upgrade', u.target, 0, u, u.cost, gain);
+      consider('upgrade', u.target, 0, u, upgradeCost(s, u), gain);
     }
   }
   if (o.upgrades && !chalActive(s, 'nomgr')) {
@@ -318,7 +318,7 @@ function quickBuys(s: GameState, allUpgrades: boolean): number {
     const limit = s.cash * SMALL_UPGRADE;
     for (const u of UPGRADES) {
       if (s.upgrades[u.id]) continue;
-      if (u.cost > (allUpgrades ? s.cash : limit)) break;
+      if (upgradeCost(s, u) > (allUpgrades ? s.cash : limit)) break;
       if (buyUpgrade(s, u.id)) n++;
     }
   }

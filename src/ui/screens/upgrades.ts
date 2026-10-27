@@ -2,6 +2,7 @@ import { BUILDINGS } from '../../data/buildings';
 import { UPGRADES } from '../../data/upgrades';
 import { buyAllUpgrades, buyUpgrade } from '../../core/actions';
 import { fmt } from '../../core/format';
+import { upgradeCost } from '../../core/economy';
 import { G } from '../ctx';
 import { h, setClass, setText, clear } from '../dom';
 import { burstAt, toast } from '../fx';
@@ -50,7 +51,8 @@ export function createUpgrades(): Screen {
     for (const u of open) {
       const b = u.target >= 0 ? BUILDINGS[u.target] : null;
       const locked = b !== null && s.buildings[u.target].owned === 0;
-      const btn = h('button', { class: 'btn small' }, h('span', { class: 'cost num' }, h('span', { class: 'coin small' }, '¢'), fmt(u.cost)));
+      const cost = upgradeCost(s, u);
+      const btn = h('button', { class: 'btn small' }, h('span', { class: 'cost num' }, h('span', { class: 'coin small' }, '¢'), fmt(cost)));
       btn.addEventListener('click', () => {
         if (buyUpgrade(G.s, u.id)) {
           sfx.upgrade();
@@ -58,7 +60,7 @@ export function createUpgrades(): Screen {
           burstAt(btn, b?.color ?? '#a78bfa', 22, 'spark', 1);
         } else sfx.error();
       });
-      rows.push({ cost: u.cost, btn });
+      rows.push({ cost, btn });
       const card = h('div', { class: 'card' + (locked ? ' locked' : '') + (b ? '' : ' glow') },
         h('div', { class: 'row' },
           h('div', { class: 'icon-round' }, b ? b.emoji : '🌐'),
@@ -81,8 +83,9 @@ export function createUpgrades(): Screen {
     let sum = 0;
     for (const u of UPGRADES) {
       if (G.s.upgrades[u.id]) continue;
-      if (sum + u.cost > G.s.cash) break;
-      sum += u.cost;
+      const cost = upgradeCost(G.s, u);
+      if (sum + cost > G.s.cash) break;
+      sum += cost;
       affordable++;
     }
     setText(allLabel, affordable ? `Alle kaufen (${affordable})` : 'Alle kaufen');
@@ -95,5 +98,5 @@ export function createUpgrades(): Screen {
 
 export function upgradeBadge(): boolean {
   const next = UPGRADES.find((u) => !G.s.upgrades[u.id]);
-  return !!next && next.cost <= G.s.cash;
+  return !!next && upgradeCost(G.s, next) <= G.s.cash;
 }

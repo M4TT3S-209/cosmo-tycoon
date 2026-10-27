@@ -6,7 +6,7 @@ import { LAB_NODES } from '../src/data/lab';
 import { PLANETS } from '../src/data/planets';
 import { QUANTUM_PERKS } from '../src/data/quantum';
 import { defaultState } from '../src/core/state';
-import { compute, lab, newCalc, pendingStardust, stardustExact, pendingQuantum, canGalaxyJump } from '../src/core/economy';
+import { compute, lab, labCost, newCalc, pendingStardust, stardustExact, pendingQuantum, canGalaxyJump } from '../src/core/economy';
 import { buyLab, buyQuantum, buyShop, labAvailable, permCost, tapBuilding } from '../src/core/actions';
 import { autoSpend } from '../src/core/autobuy';
 import { tick, newTickOut } from '../src/core/tick';
@@ -20,6 +20,11 @@ import { artifactSlots } from '../src/core/rank';
 import { abortChallenge, challengeGoal, challengesUnlocked, startChallenge } from '../src/core/challenges';
 import { simulateOffline } from '../src/core/offline';
 import { CHALLENGES } from '../src/data/challenges';
+import { MEGAPROJECTS } from '../src/data/megaprojects';
+import { RES_IDS, prosperityMult, totalColonyLevels } from '../src/core/colonies';
+import { talentPointsSpent } from '../src/core/commander';
+import { megaStage } from '../src/core/talentfx';
+import { botV3 } from './bot-v3';
 
 declare const process: { argv: string[]; env: Record<string, string | undefined> };
 const HOURS = Number(process.argv[2] ?? 48);
@@ -27,6 +32,8 @@ const DEBUG_S = Number(process.env.DEBUG_S ?? 0);
 /** OFFLINE=1: nach je 16 h aktivem Spiel 8 h offline (Nacht) */
 const OFFLINE = !!process.env.OFFLINE;
 const CHAL_CHANCE = Number(process.env.CHAL ?? 0.35);
+/** STYLE=nutzer: wie ein schneller Spieler – kleine Supernovas ab +5 % nach 2 min, Galaxie-Sprung erst spät */
+const NUTZER = process.env.STYLE === 'nutzer';
 const s = defaultState(0);
 s.settings.autoSupernova = true;
 const calc = newCalc();
@@ -59,7 +66,7 @@ function botLab() {
       if (!labAvailable(s, n.id)) continue;
       const lvl = lab(s, n.id);
       if (lvl >= n.maxLevel) continue;
-      let c = n.cost(lvl);
+      let c = labCost(s, n, lvl);
       if (n.id === 'income') c *= 0.5; // Einkommen bevorzugen
       if (['offtime', 'offeff', 'luck', 'gemfinder', 'magnet', 'boostlen'].includes(n.id)) c *= 4;
       if (c < bestCost) {
@@ -105,7 +112,7 @@ function botFleet(maxMinutes: number) {
     s.fleet.ships.forEach((ship, i) => {
       for (const mod of SHIP_MODULES) {
         if (ship[mod.id] >= 25) continue;
-        const c = moduleCost(ship[mod.id], mod.id);
+        const c = moduleCost(ship[mod.id], mod.id, s);
         if (c < bc) {
           bc = c;
           best = [i, mod.id];
@@ -124,6 +131,7 @@ let chalDoneSeen = 0;
 let seenNovas = 0;
 let seenPlanet = 0;
 let lastRankLog = 1;
+let seenMega = 0;
 let nextNight = 16 * 3600;
 
 let lastHist = -1;
@@ -139,6 +147,11 @@ while (t < end) {
   t += dt;
   real += dt;
   if (Math.floor(t) % 60 === 0 && t % 1 < dt) botFleet(240);
+  if (Math.floor(t) % 30 === 0 && t % 1 < dt) botV3(s, real * 1000, mark);
+  if (s.stats.megaStages !== seenMega) {
+    seenMega = s.stats.megaStages;
+    log(`🏗️  Megaprojekt-Stufe fertig: ${MEGAPROJECTS.filter((m) => megaStage(s, m.id) > 0).map((m) => `${m.emoji}${megaStage(s, m.id)}`).join(' ')}`);
+  }
   if (OFFLINE && t >= nextNight) {
     nextNight += 16 * 3600;
     botFleet(480);
@@ -148,6 +161,7 @@ while (t < end) {
       (r.supernovas ? ` · 💥 ${r.supernovas} Supernovas +${fmt(r.stardust)} ✨` : '') + ` · ✨ möglich ${fmt(r.pendingBefore)} → ${fmt(r.pendingAfter)}` +
       (r.planetAfter > r.planetBefore ? `  → 🪐 ${PLANETS[r.planetAfter].name}` : ''));
     botFleet(240);
+    botV3(s, real * 1000, mark);
   }
   // Supernovas, die das Spiel selbst ausgelöst hat (Auto-Supernova, auch offline): Sternenstaub investieren
   if (s.totalSupernovas !== seenNovas) {
@@ -196,7 +210,7 @@ while (t < end) {
   if (r > bestRate) bestRate = r;
   const p5 = pHist.length >= 2 ? pHist[pHist.length - 2] : 0;
   const stalled = s.runTime > 1200 && stardustExact(s) < p5 * 1.03 && p >= 0.2 * S;
-  const ready = !s.challenge.active && (S === 0 ? p >= FIRST_GOAL : s.runTime > 120 && (p >= S || stalled));
+  const ready = !s.challenge.active && (S === 0 ? p >= FIRST_GOAL : s.runTime > 120 && (p >= S || stalled || (NUTZER && p >= 0.05 * S)));
   if (ready) {
     const planetBefore = s.planet;
     const run = s.runTime;
@@ -220,7 +234,7 @@ while (t < end) {
     log(`🏅 Prüfung geschafft (${s.stats.challengesDone} gesamt) · Stufen ${JSON.stringify(s.challengeTiers)}`);
     chalStart = 0;
   }
-  if (canGalaxyJump(s) && pendingQuantum(s) >= Math.max(3, s.quantumEarned * 0.5)) {
+  if (canGalaxyJump(s) && pendingQuantum(s) >= Math.max(3, s.quantumEarned * (NUTZER ? 1.5 : 0.5))) {
     const q = pendingQuantum(s);
     galaxyJump(s);
     log(`⚛️  Galaxie-Sprung #${s.galaxyJumps}: +${q} Quantenkerne`);
@@ -232,7 +246,12 @@ while (t < end) {
     lastReport = t;
     compute(s, 0, calc);
     log(`   [Status] Geld ${fmt(s.cash)} · ${fmt(calc.income)}/s · ✨ ${fmt(s.stardustEarned)} · Planet ${PLANETS[s.planet].name} · 💎 ${s.gems} · Rang ${s.rank.level} · Art ${Object.keys(s.artifacts).length} · ⚗️ ${fmt(s.fleet.em)}`);
+    if (Object.keys(s.colonies).length) {
+      log(`   [Kolonien] ${Object.keys(s.colonies).length} Kolonien · ${totalColonyLevels(s)} Stufen (Wohlstand ×${prosperityMult(s).toFixed(2)}) · ${RES_IDS.map((k) => `${k} ${fmt(s.res[k])}`).join(' · ')} · Talente ${talentPointsSpent(s)} · Funksprüche ${s.stats.eventsAnswered} · Ruf ${JSON.stringify(s.factions)}`);
+    }
   }
 }
+console.log('');
+console.log('Version 3:', 'Kolonie-Stufen', totalColonyLevels(s), '· Megaprojekte', JSON.stringify(s.mega.stages), '· Talente', talentPointsSpent(s), '· Funksprüche', s.stats.eventsAnswered, '· Ruf', JSON.stringify(s.factions), '· Wochen-Aufträge', s.stats.weeklyDone, '· Fähigkeiten', s.stats.abilitiesUsed);
 console.log('\nErfolge:', Object.keys(s.achievements).length, '· Supernovas:', s.totalSupernovas, '· Rang:', s.rank.level, '· Artefakte:', JSON.stringify(Object.fromEntries(Object.entries(s.artifacts).map(([k, v]) => [k, v.level]))), '· Prüfungen:', JSON.stringify(s.challengeTiers), '· Expeditionen:', s.fleet.expeditions);
 if (process.env.DUMP) console.log('JSON:' + JSON.stringify(s));

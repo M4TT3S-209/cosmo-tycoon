@@ -1,10 +1,14 @@
 // Simulationsschritt + periodische Automatik
 import { BUILDING_COUNT } from '../data/buildings';
-import { earn, nextCometDelay } from './actions';
+import { autoLab, autoLabActive, earn, nextCometDelay } from './actions';
 import { autoOptions, autoSpend, autoStatus } from './autobuy';
 import { buildingBlocked, compute, isManaged, type Calc } from './economy';
 import { checkChallenge } from './challenges';
+import { ensureColonies, tickColonies, updateColonyBuilds, updateMega } from './colonies';
+import { syncAbilities } from './commander';
+import { checkChains, tickEvents } from './events';
 import { checkAchievements, ensureQuests, trackDay, updateQuests } from './meta';
+import { syncWeekly } from './weekly';
 import { autoSupernovaReady, supernova } from './prestige';
 import type { GameState } from './state';
 
@@ -21,6 +25,8 @@ export function newTickOut(): TickOut {
 }
 
 let slowTimer = 0;
+/** Kolonie-Zeit seit dem letzten langsamen Schritt (Produktion läuft nach Wanduhr) */
+let colonyDt = 0;
 
 export function tick(s: GameState, dt: number, now: number, calc: Calc, out: TickOut): void {
   out.earned.fill(0);
@@ -60,6 +66,8 @@ export function tick(s: GameState, dt: number, now: number, calc: Calc, out: Tic
     }
   }
 
+  tickEvents(s, dt, now);
+
   s.nextCometIn -= dt;
   if (s.nextCometIn <= 0) {
     s.nextCometIn = nextCometDelay(s);
@@ -68,6 +76,7 @@ export function tick(s: GameState, dt: number, now: number, calc: Calc, out: Tic
 
   if (calc.income > s.stats.bestIncome) s.stats.bestIncome = calc.income;
 
+  colonyDt += dt;
   slowTimer += dt;
   if (slowTimer >= 0.5) {
     slowTimer = 0;
@@ -75,14 +84,23 @@ export function tick(s: GameState, dt: number, now: number, calc: Calc, out: Tic
   }
 }
 
-/** Zweimal pro Sekunde: Automatik, Erfolge, Missionen */
+/** Zweimal pro Sekunde: Automatik, Kolonien, Erfolge, Missionen */
 export function slowTick(s: GameState, now: number): void {
   const auto = autoOptions(s);
   if (auto) autoSpend(s, now, auto);
   else autoStatus.target = null;
   checkChallenge(s);
+  syncAbilities(s);
+  checkChains(s, now);
+  ensureColonies(s);
+  tickColonies(s, colonyDt);
+  colonyDt = 0;
+  updateColonyBuilds(s, now);
+  updateMega(s, now);
   if (autoSupernovaReady(s) && !s.challenge.active) supernova(s);
+  if (autoLabActive(s)) autoLab(s);
   trackDay(s, now);
+  syncWeekly(s, now);
   ensureQuests(s);
   updateQuests(s);
   checkAchievements(s);

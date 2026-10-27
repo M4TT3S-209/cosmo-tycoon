@@ -5,8 +5,11 @@ import { repairNumbers } from './safe';
 
 const KEY = 'cosmo-tycoon:save';
 const BACKUP = 'cosmo-tycoon:backup';
-/** Unveränderte Kopie des letzten v1-Spielstands vor dem Update auf v2 – wird nie überschrieben */
-export const PRE_UPDATE_BACKUP = 'cosmo-tycoon:backup-v1';
+/**
+ * Unveränderte Kopie eines Spielstands der Version v vor dem Update auf die nächste große Version
+ * (backup-v1 vor 2.0, backup-v2 vor 3.0 …) – wird nie überschrieben.
+ */
+export const preUpdateKey = (v: number): string => `cosmo-tycoon:backup-v${v}`;
 const PREFIX = 'CT1:';
 
 function storage(): Storage | null {
@@ -65,8 +68,9 @@ export function loadGame(now = Date.now()): LoadResult {
         const raw = st.getItem(key);
         if (!raw) continue;
         // vor der ersten Migration eine unveränderte Kopie des alten Stands ablegen
-        if (rawVersion(JSON.parse(raw)) < SAVE_VERSION && !st.getItem(PRE_UPDATE_BACKUP)) {
-          st.setItem(PRE_UPDATE_BACKUP, raw);
+        const v = rawVersion(JSON.parse(raw));
+        if (v < SAVE_VERSION && !st.getItem(preUpdateKey(v))) {
+          st.setItem(preUpdateKey(v), raw);
         }
         const state = deserialize(raw, now);
         lastWritten = raw;
@@ -79,20 +83,29 @@ export function loadGame(now = Date.now()): LoadResult {
   return { state: defaultState(now), fresh: true, restoredFromBackup: false };
 }
 
-/** Gibt es die unveränderte Sicherung von vor dem Update? */
-export function hasPreUpdateBackup(): boolean {
+/** Neueste vorhandene Sicherung von vor einem Update (Rohtext + Version) */
+function latestPreUpdate(): { raw: string; version: number } | null {
   try {
-    return !!storage()?.getItem(PRE_UPDATE_BACKUP);
+    const st = storage();
+    for (let v = SAVE_VERSION - 1; v >= 1; v--) {
+      const raw = st?.getItem(preUpdateKey(v));
+      if (raw) return { raw, version: v };
+    }
   } catch {
-    return false;
+    /* nicht verfügbar */
   }
+  return null;
 }
 
-/** Lädt die Sicherung von vor dem Update (wird dabei erneut migriert, die Sicherung bleibt bestehen) */
+/** Gibt es eine unveränderte Sicherung von vor einem Update? Liefert deren Spielstand-Version. */
+export function hasPreUpdateBackup(): number {
+  return latestPreUpdate()?.version ?? 0;
+}
+
+/** Lädt die neueste Sicherung von vor einem Update (wird dabei erneut migriert, die Sicherung bleibt bestehen) */
 export function loadPreUpdateBackup(now = Date.now()): GameState | null {
-  const raw = storage()?.getItem(PRE_UPDATE_BACKUP);
-  if (!raw) return null;
-  return deserialize(raw, now);
+  const b = latestPreUpdate();
+  return b ? deserialize(b.raw, now) : null;
 }
 
 export function wipeSave(): void {

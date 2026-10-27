@@ -13,5 +13,5 @@
     "noEmit": true,
     "types": ["vite/client", "vite-plugin-pwa/client"]
   },
-  "include": ["src", "tests", "scripts/simulate.ts", "vite.config.ts"]
+  "include": ["src", "tests", "scripts/simulate.ts", "scripts/bot-v3.ts", "vite.config.ts"]
 }
