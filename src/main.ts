@@ -43,6 +43,7 @@ function boot(): void {
     G.s.tutorial.flags.v2intro = true;
     G.s.tutorial.flags.v21intro = true;
     G.s.tutorial.flags.v3intro = true;
+    G.s.tutorial.flags.v31intro = true;
     showIntro(() => {
       G.s.tutorial.step = 1;
       saveGame(G.s);

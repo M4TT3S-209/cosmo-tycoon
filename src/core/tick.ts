@@ -7,7 +7,7 @@ import { checkChallenge } from './challenges';
 import { ensureColonies, tickColonies, updateColonyBuilds, updateMega } from './colonies';
 import { syncAbilities } from './commander';
 import { checkChains, tickEvents } from './events';
-import { checkAchievements, ensureQuests, trackDay, updateQuests } from './meta';
+import { autoCollect, checkAchievements, ensureQuests, trackDay, updateQuests } from './meta';
 import { syncWeekly } from './weekly';
 import { autoSupernovaReady, supernova } from './prestige';
 import type { GameState } from './state';
@@ -103,5 +103,6 @@ export function slowTick(s: GameState, now: number): void {
   syncWeekly(s, now);
   ensureQuests(s);
   updateQuests(s);
+  autoCollect(s);
   checkAchievements(s);
 }

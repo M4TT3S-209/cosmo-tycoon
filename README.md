@@ -45,6 +45,10 @@ Ein Weltraum-Idle-Tycoon für das iPhone (als Web-App/PWA): Vom Weltraumschrott-
 - **🗓️ Wochen-Ereignis** (`src/core/weekly.ts`): jede Kalenderwoche eine andere Galaxie-Bedingung und ein Sonderauftrag – ohne Server, über die Kalenderwoche als Zufallswert
 - Spielstände werden auf Version 3 migriert; eine unveränderte Kopie liegt unter `cosmo-tycoon:backup-v2` (Wiederherstellen unter Mehr → ⚙️)
 
+### Neu in Version 3.1
+
+- **🤖 Kristall-Sammler:** holt fertige Missionen automatisch ab (einmalig 20.000 💎 im Kristall-Shop, sichtbar ab dem ersten Galaxie-Sprung, abschaltbar)
+
 ## Auf dem iPhone installieren
 
 1. Link in **Safari** öffnen

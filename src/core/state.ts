@@ -102,6 +102,8 @@ export interface Settings {
   autoSupernova: boolean;
   /** Auto-Labor (Quantenrechner Stufe 3) */
   autoLab: boolean;
+  /** Kristall-Sammler holt fertige Missionen ab (wenn gekauft) */
+  autoCollect: boolean;
   buyMode: BuyMode;
 }
 
@@ -222,6 +224,8 @@ export interface GameState {
   settings: Settings;
   tutorial: { step: number; flags: Record<string, boolean> };
   installHintDismissed: boolean;
+  /** Kristall-Sammler im Shop gekauft (Version 3.1) */
+  gemCollector: boolean;
 }
 
 export function defaultState(now = Date.now()): GameState {
@@ -304,10 +308,12 @@ export function defaultState(now = Date.now()): GameState {
       autoUpgrade: true,
       autoSupernova: true,
       autoLab: true,
+      autoCollect: true,
       buyMode: 1,
     },
     tutorial: { step: 0, flags: {} },
     installHintDismissed: false,
+    gemCollector: false,
   };
 }
 

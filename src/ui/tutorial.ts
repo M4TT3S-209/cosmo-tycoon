@@ -85,17 +85,30 @@ const NEW_IN_3 = [
   '🧭 <b>Neue Navigation:</b> Anlagen, Manager und Upgrades findest du jetzt zusammen unter 🏭 Imperium.',
 ];
 
+const NEW_IN_31 = '🤖 <b>Kristall-Sammler:</b> Holt fertige Missionen automatisch ab. Ab dem ersten Galaxie-Sprung für 20.000 💎 im Kristall-Shop (Mehr → 💎 Shop), an/aus unter ⚙️.';
+
 export function showWhatsNew(): void {
   const s = G.s;
   if (!s.tutorial.flags.v3intro) {
     s.tutorial.flags.v2intro = true;
     s.tutorial.flags.v21intro = true;
     s.tutorial.flags.v3intro = true;
+    s.tutorial.flags.v31intro = true;
     showModal({
       hero: '🌌',
-      title: 'Cosmo Tycoon 3.0 – Imperium',
-      body: ['Dein Spielstand ist vollständig erhalten – und dein Imperium wird größer:', ...NEW_IN_3, 'Neue Bereiche sind mit einem roten Punkt markiert. Beim ersten Öffnen erkläre ich dir alles.'],
+      title: 'Cosmo Tycoon 3.1 – Imperium',
+      body: ['Dein Spielstand ist vollständig erhalten – und dein Imperium wird größer:', ...NEW_IN_3, NEW_IN_31, 'Neue Bereiche sind mit einem roten Punkt markiert. Beim ersten Öffnen erkläre ich dir alles.'],
       actions: [{ label: '🚀 Auf ins neue Imperium!', cls: 'violet' }],
+    });
+    return;
+  }
+  if (!s.tutorial.flags.v31intro) {
+    s.tutorial.flags.v31intro = true;
+    showModal({
+      hero: '🤖',
+      title: 'Cosmo Tycoon 3.1',
+      body: ['Danke für deinen Wunsch! Neu:', NEW_IN_31],
+      actions: [{ label: '👍 Super', cls: 'violet' }],
     });
     return;
   }

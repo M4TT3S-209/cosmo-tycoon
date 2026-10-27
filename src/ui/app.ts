@@ -3,7 +3,7 @@ import { BUILDINGS } from '../data/buildings';
 import { PLANETS, PLANET_MULT } from '../data/planets';
 import { on } from '../core/bus';
 import { fmt, fmtTime, setNotation } from '../core/format';
-import { canClaimDaily, claimDaily, nextDailyDay } from '../core/meta';
+import { canClaimDaily, claimDaily, collectorActive, nextDailyDay } from '../core/meta';
 import { earn } from '../core/actions';
 import type { OfflineSummary } from '../core/offline';
 import { readyMissions } from '../core/fleet';
@@ -162,7 +162,12 @@ function wireEvents(): void {
     toast(def.emoji, `Erfolg: ${def.name}`, `+${def.gems} 💎 · +1 % Einkommen`, true, 3200);
   });
   on('questDone', () => {
+    if (collectorActive(G.s)) return; // holt der Kristall-Sammler gleich selbst ab
     toast('🎯', 'Mission erfüllt!', 'Hol dir deine Kristalle unter 🎯 ab.');
+  });
+  on('autoCollect', ({ gems, n }) => {
+    sfx.gems();
+    toast('🤖', `Kristall-Sammler: +${fmt(gems, false)} 💎`, n === 1 ? '1 Mission abgeholt' : `${n} Missionen abgeholt`, false, 1800);
   });
   on('timewarp', ({ amount, hours }) => {
     if (hours < 1) return;

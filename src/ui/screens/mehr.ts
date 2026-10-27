@@ -4,7 +4,9 @@ import { SHOP, buyShop } from '../../core/actions';
 import { ACHIEVEMENT_BONUS, RANK_BONUS, permanentMults } from '../../core/economy';
 import { RANK_MAX, artifactSlots, hangarSlots, nextUnlock, rankTitle, xpForNext } from '../../core/rank';
 import { fmt, fmtInt, fmtMult, fmtTime, setNotation } from '../../core/format';
-import { canClaimDaily, claimDaily, claimQuest, nextDailyDay, questProgress, questText } from '../../core/meta';
+import {
+  COLLECTOR_COST, buyCollector, canClaimDaily, claimDaily, claimQuest, collectorActive, collectorAvailable, nextDailyDay, questProgress, questText,
+} from '../../core/meta';
 import { exportCode, hasPreUpdateBackup, importCode, loadPreUpdateBackup, saveGame, wipeSave } from '../../core/save';
 import { defaultState } from '../../core/state';
 import { megaStage } from '../../core/talentfx';
@@ -25,7 +27,7 @@ const SUBS = [
   { id: 'optionen', label: '⚙️' },
 ];
 
-export const APP_VERSION = '3.0.0';
+export const APP_VERSION = '3.1.0';
 
 let onReplaceState: (() => void) | null = null;
 /** wird von app.ts gesetzt: nach Import/Reset alles neu starten */
@@ -189,6 +191,7 @@ export function createMehr(): Screen {
     });
 
     el.appendChild(h('div', { class: 'section-title' }, 'Missionen'));
+    if (collectorActive(s)) el.appendChild(h('div', { class: 'hint', style: 'margin:0 4px' }, '🤖 Der Kristall-Sammler holt fertige Missionen automatisch ab.'));
     for (const q of s.quests) {
       const wasDone = q.done;
       const fill = h('i');
@@ -244,6 +247,7 @@ export function createMehr(): Screen {
       ),
     ));
     updaters.push(() => setText(gems, fmt(G.s.gems, false)));
+    if (collectorAvailable(G.s)) buildCollectorCard();
     for (const item of SHOP) {
       const costEl = h('span', { class: 'num' }, '');
       const btn = h('button', { class: 'btn small cyan' }, costEl, ' 💎');
@@ -276,6 +280,39 @@ export function createMehr(): Screen {
         }
       });
     }
+  }
+
+  function buildCollectorCard(): void {
+    const s = G.s;
+    let right: HTMLElement;
+    if (s.gemCollector) right = h('span', { class: 'owned-tag' }, s.settings.autoCollect ? '✓ Aktiv' : 'Aus');
+    else {
+      const btn = h('button', { class: 'btn small cyan' }, `${fmt(COLLECTOR_COST, false)} 💎`);
+      btn.addEventListener('click', () => {
+        if (buyCollector(G.s)) {
+          sfx.claim();
+          haptic();
+          burstAt(btn, '#67e8f9', 30, 'spark', 1.2);
+          toast('🤖', 'Kristall-Sammler aktiv', 'Fertige Missionen werden ab jetzt automatisch abgeholt.', true, 4000);
+        } else {
+          sfx.error();
+          toast('💎', 'Nicht genug Kristalle', `Du brauchst ${fmt(COLLECTOR_COST, false)} 💎.`);
+        }
+      });
+      updaters.push(() => setClass(btn, 'off', G.s.gems < COLLECTOR_COST));
+      right = btn;
+    }
+    el.appendChild(h('div', { class: 'card glow', style: '--c:#67e8f9' },
+      h('div', { class: 'row' },
+        h('div', { class: 'icon-round' }, '🤖'),
+        h('div', { class: 'col' },
+          h('div', { class: 'title' }, 'Kristall-Sammler'),
+          h('div', { class: 'sub' }, 'Holt fertige Missionen automatisch ab – du musst nicht mehr tippen. Einmal kaufen, gilt für immer.'),
+          s.gemCollector ? h('div', { class: 'hint' }, 'An/aus unter Mehr → ⚙️') : null,
+        ),
+        right,
+      ),
+    ));
   }
 
   // ---- Erfolge -----------------------------------------------------------------
@@ -396,6 +433,7 @@ export function createMehr(): Screen {
     toggle('Auto-Käufer', 'Kauft Anlagen nach Kosten und Nutzen, achtet auf Meilensteine – auch offline', () => G.s.settings.autoBuy, (v) => { G.s.settings.autoBuy = v; }, (s.lab.autobuy ?? 0) > 0);
     toggle('Auto-Upgrader', 'Kauft Upgrades & Manager – auch offline', () => G.s.settings.autoUpgrade, (v) => { G.s.settings.autoUpgrade = v; }, (s.lab.autoupgrade ?? 0) > 0);
     toggle('Auto-Labor', 'Kauft Forschung im Labor automatisch, günstigste zuerst – auch offline (Quantenrechner Stufe 3)', () => G.s.settings.autoLab, (v) => { G.s.settings.autoLab = v; }, megaStage(s, 'rechner') >= 3);
+    toggle('Kristall-Sammler', 'Holt fertige Missionen automatisch ab', () => G.s.settings.autoCollect, (v) => { G.s.settings.autoCollect = v; }, s.gemCollector);
     toggle('Auto-Supernova', 'Löst aus, wenn sich der Sternenstaub verdoppelt oder der Lauf kaum noch wächst – auch offline', () => G.s.settings.autoSupernova, (v) => { G.s.settings.autoSupernova = v; }, (s.qperks.qauto ?? 0) > 0);
     el.appendChild(box);
 

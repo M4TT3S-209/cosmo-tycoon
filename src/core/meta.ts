@@ -169,6 +169,45 @@ export function claimQuest(s: GameState, id: number): number {
   return n;
 }
 
+// ---- Kristall-Sammler ------------------------------------------------------------
+
+export const COLLECTOR_COST = 20000;
+
+/** im Shop sichtbar ab dem ersten Galaxie-Sprung */
+export function collectorAvailable(s: GameState): boolean {
+  return s.gemCollector || s.galaxyJumps > 0;
+}
+
+export function collectorActive(s: GameState): boolean {
+  return s.gemCollector && s.settings.autoCollect;
+}
+
+export function buyCollector(s: GameState): boolean {
+  if (s.gemCollector || !collectorAvailable(s)) return false;
+  if (s.gems < COLLECTOR_COST) {
+    emit('cantAfford', {});
+    return false;
+  }
+  s.gems -= COLLECTOR_COST;
+  s.gemCollector = true;
+  emit('structure', {});
+  return true;
+}
+
+/** Holt alle fertigen Missionen ab (neue Missionen beginnen bei 0, es gibt also keine Kettenreaktion) */
+export function autoCollect(s: GameState): number {
+  if (!collectorActive(s)) return 0;
+  let gems = 0;
+  let n = 0;
+  for (const q of [...s.quests]) {
+    if (!q.done) continue;
+    gems += claimQuest(s, q.id);
+    n++;
+  }
+  if (n) emit('autoCollect', { gems, n });
+  return gems;
+}
+
 // ---- Tägliche Belohnung ----------------------------------------------------------
 
 export function dayKey(t: number): string {

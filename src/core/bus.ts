@@ -31,6 +31,8 @@ export interface GameEvents {
   colonyBuilt: { planet: number; id: string; level: number };
   megaDone: { id: string; stage: number };
   weeklyNew: { key: string };
+  /** Kristall-Sammler hat Missionen abgeholt */
+  autoCollect: { gems: number; n: number };
 }
 
 export type CometKind = 'cash' | 'frenzy' | 'speed' | 'gems';

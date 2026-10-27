@@ -18,7 +18,7 @@ describe('Migration v2 → v3 (Spielstand bleibt erhalten)', () => {
       expect(s[k]).toEqual(old[k]);
     }
     // neue Einstellung kommt dazu, alle alten bleiben
-    expect(s.settings).toEqual({ ...old.settings, autoLab: true });
+    expect(s.settings).toEqual({ ...old.settings, autoLab: true, autoCollect: true });
     expect(s.buildings).toEqual(old.buildings);
     expect(s.managers).toEqual(old.managers);
     expect(s.gems).toBeGreaterThanOrEqual(old.gems);
