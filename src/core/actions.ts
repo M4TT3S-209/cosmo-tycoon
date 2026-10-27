@@ -295,6 +295,15 @@ export function nextCometDelay(s: GameState): number {
   return (120 + Math.random() * 180) / freq;
 }
 
+/**
+ * Kristalle eines Kristall-Kometen (vor dem Kristall-Bonus): 12–24, dazu +1 je 3 Kommandanten-Level –
+ * so viel wie etwa zwei Missionen. Im Kometensturm (alle 20 s ein Komet) nur ein Viertel.
+ */
+export function cometGems(s: GameState, rnd: number = Math.random()): number {
+  const base = 12 + Math.floor(rnd * 13) + Math.floor(s.rank.level / 3);
+  return chalActive(s, 'storm') ? Math.max(1, Math.round(base / 4)) : base;
+}
+
 export function collectComet(s: GameState, now: number, rnd = Math.random()): { kind: CometKind; text: string } {
   s.stats.cometsTapped++;
   addXp(s, XP.comet);
@@ -313,12 +322,12 @@ export function collectComet(s: GameState, now: number, rnd = Math.random()): { 
     grantBoost(s, 'frenzy', now);
     kind = 'frenzy';
     text = 'Kometen-Rausch! Einkommen ×7';
-  } else if (rnd < 0.9) {
+  } else if (rnd < 0.85) {
     grantBoost(s, 'rush', now);
     kind = 'speed';
     text = 'Tempo-Rausch! Alles ×3 schneller';
   } else {
-    const n = addGems(s, 2 + Math.floor(Math.random() * 4));
+    const n = addGems(s, cometGems(s));
     kind = 'gems';
     text = `Kristallfund! +${n} 💎`;
   }

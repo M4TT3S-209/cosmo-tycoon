@@ -84,3 +84,29 @@ describe('Kristall-Sammler', () => {
     expect(s.gems).toBeGreaterThanOrEqual(gems);
   });
 });
+
+// ---- Kristall-Kometen (3.1.1) ------------------------------------------------------
+import { cometGems, collectComet } from '../src/core/actions';
+
+describe('Kristall-Kometen', () => {
+  it('bringen etwa zwei Missionen, wachsen mit dem Rang, Kometensturm nur ein Viertel', () => {
+    const s = state();
+    s.rank.level = 1;
+    expect(cometGems(s, 0)).toBe(12);
+    expect(cometGems(s, 0.999)).toBe(24);
+    s.rank.level = 38;
+    expect(cometGems(s, 0)).toBe(24);
+    s.challenge = { active: 'storm', goal: 1e9 };
+    expect(cometGems(s, 0)).toBe(6);
+  });
+
+  it('kommen bei 15 % der Kometen und nutzen den Kristall-Bonus', () => {
+    const s = state();
+    s.challenge = { active: '', goal: 0 };
+    s.rank.level = 38;
+    const gems = s.gems;
+    expect(collectComet(s, 0, 0.84).kind).toBe('speed');
+    expect(collectComet(s, 0, 0.85).kind).toBe('gems');
+    expect(s.gems - gems).toBeGreaterThanOrEqual(24);
+  });
+});
