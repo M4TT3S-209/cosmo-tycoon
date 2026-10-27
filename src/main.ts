@@ -12,6 +12,7 @@ import { showIntro, showWhatsNew, tutorialActive } from './ui/tutorial';
 import { toast } from './ui/fx';
 import { installAudioUnlock, resumeAudio, suspendAudio } from './audio/sfx';
 import { initDebug } from './ui/debug';
+import { APP_VERSION } from './data/changelog';
 
 /** ab dieser Abwesenheit gibt es den „Willkommen zurück“-Dialog */
 const OFFLINE_MIN_SEC = 45;
@@ -44,6 +45,7 @@ function boot(): void {
     G.s.tutorial.flags.v21intro = true;
     G.s.tutorial.flags.v3intro = true;
     G.s.tutorial.flags.v31intro = true;
+    G.s.seenVersion = APP_VERSION;
     showIntro(() => {
       G.s.tutorial.step = 1;
       saveGame(G.s);
@@ -80,7 +82,17 @@ function boot(): void {
     /* nicht unterstützt */
   }
 
-  registerSW({ immediate: true });
+  registerSW({
+    immediate: true,
+    // iOS hält die App oft tagelang im Hintergrund – beim Zurückwechseln deshalb nach Updates suchen
+    // (ein neues Update lädt die Seite dann automatisch neu, der Spielstand wird vorher gespeichert)
+    onRegisteredSW(_url, reg) {
+      if (!reg) return;
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) void reg.update().catch(() => {});
+      });
+    },
+  });
   requestAnimationFrame(loop);
 }
 

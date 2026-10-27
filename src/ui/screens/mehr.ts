@@ -12,6 +12,7 @@ import { defaultState } from '../../core/state';
 import { megaStage } from '../../core/talentfx';
 import { claimWeekly, weekEndsIn, weeklyClaimable, weeklyContract, weeklyMod, weeklyProgress, weeklyRewardEm } from '../../core/weekly';
 import { WEEKLY_REWARD } from '../../data/weekly';
+import { APP_VERSION } from '../../data/changelog';
 import { G, isIOS, isStandalone } from '../ctx';
 import { h, setClass, setScale, setText, clear } from '../dom';
 import { burstAt, toast } from '../fx';
@@ -27,7 +28,6 @@ const SUBS = [
   { id: 'optionen', label: '⚙️' },
 ];
 
-export const APP_VERSION = '3.1.2';
 
 let onReplaceState: (() => void) | null = null;
 /** wird von app.ts gesetzt: nach Import/Reset alles neu starten */

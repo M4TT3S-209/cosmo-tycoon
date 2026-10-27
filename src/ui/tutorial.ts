@@ -11,6 +11,7 @@ import { tabButton } from './hud';
 import { saveGame } from '../core/save';
 import { fleetUnlocked } from '../core/rank';
 import { challengesUnlocked } from '../core/challenges';
+import { APP_VERSION, CHANGELOG, changesSince, seenVersionOf } from '../data/changelog';
 
 interface Step {
   text: string;
@@ -85,7 +86,6 @@ const NEW_IN_3 = [
   '🧭 <b>Neue Navigation:</b> Anlagen, Manager und Upgrades findest du jetzt zusammen unter 🏭 Imperium.',
 ];
 
-const NEW_IN_31 = '🤖 <b>Kristall-Sammler:</b> Holt fertige Missionen automatisch ab. Ab dem ersten Galaxie-Sprung für 20.000 💎 im Kristall-Shop (Mehr → 💎 Shop), an/aus unter ⚙️.';
 
 export function showWhatsNew(): void {
   const s = G.s;
@@ -94,21 +94,28 @@ export function showWhatsNew(): void {
     s.tutorial.flags.v21intro = true;
     s.tutorial.flags.v3intro = true;
     s.tutorial.flags.v31intro = true;
+    s.seenVersion = APP_VERSION;
+    const extra = CHANGELOG.filter((e) => e.version === '3.1.0' || e.version === '3.1.1').flatMap((e) => e.items);
     showModal({
       hero: '🌌',
-      title: 'Cosmo Tycoon 3.1 – Imperium',
-      body: ['Dein Spielstand ist vollständig erhalten – und dein Imperium wird größer:', ...NEW_IN_3, NEW_IN_31, 'Neue Bereiche sind mit einem roten Punkt markiert. Beim ersten Öffnen erkläre ich dir alles.'],
+      title: `Cosmo Tycoon ${APP_VERSION} – Imperium`,
+      body: ['Dein Spielstand ist vollständig erhalten – und dein Imperium wird größer:', ...NEW_IN_3, ...extra, 'Neue Bereiche sind mit einem roten Punkt markiert. Beim ersten Öffnen erkläre ich dir alles.'],
       actions: [{ label: '🚀 Auf ins neue Imperium!', cls: 'violet' }],
     });
     return;
   }
-  if (!s.tutorial.flags.v31intro) {
-    s.tutorial.flags.v31intro = true;
+  const changes = changesSince(seenVersionOf(s));
+  s.tutorial.flags.v31intro = true;
+  s.seenVersion = APP_VERSION;
+  if (changes.length) {
     showModal({
-      hero: '🤖',
-      title: 'Cosmo Tycoon 3.1',
-      body: ['Danke für deinen Wunsch! Neu:', NEW_IN_31],
-      actions: [{ label: '👍 Super', cls: 'violet' }],
+      hero: '🎁',
+      title: `Update auf Version ${APP_VERSION}`,
+      body: [
+        'Dein Spielstand ist erhalten. Neu seit deiner letzten Version:',
+        ...changes.flatMap((e) => e.items.map((t) => `${t} <span class="hint">(${e.version})</span>`)),
+      ],
+      actions: [{ label: '👍 Weiter', cls: 'violet' }],
     });
     return;
   }

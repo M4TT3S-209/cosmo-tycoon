@@ -226,6 +226,8 @@ export interface GameState {
   installHintDismissed: boolean;
   /** Kristall-Sammler im Shop gekauft (Version 3.1) */
   gemCollector: boolean;
+  /** zuletzt gesehene App-Version (für den Update-Hinweis, seit 3.1.3) */
+  seenVersion: string;
 }
 
 export function defaultState(now = Date.now()): GameState {
@@ -314,6 +316,7 @@ export function defaultState(now = Date.now()): GameState {
     tutorial: { step: 0, flags: {} },
     installHintDismissed: false,
     gemCollector: false,
+    seenVersion: '',
   };
 }
 

@@ -50,6 +50,7 @@ Ein Weltraum-Idle-Tycoon für das iPhone (als Web-App/PWA): Vom Weltraumschrott-
 - **🤖 Kristall-Sammler:** holt fertige Missionen automatisch ab (einmalig 20.000 💎 im Kristall-Shop, sichtbar ab dem ersten Galaxie-Sprung, abschaltbar)
 - **💎 Kristall-Kometen (3.1.1):** 15 % statt 10 % aller Kometen, 12–24 💎 plus 1 je 3 Kommandanten-Level (vor dem Kristall-Bonus) statt 2–5; im Kometensturm nur ein Viertel
 - **📦 Notvorrat (3.1.2):** fördert keine Kolonie Metall bzw. Kristall, wird auf 200 bzw. 100 aufgefüllt – man kann sich nicht mehr festbauen; Kolonie-Ausbau erst, wenn alle Bauplätze bebaut sind
+- **🔔 Update-Hinweis (3.1.3):** nach jedem Update ein Hinweis mit allen Neuerungen seit der zuletzt gesehenen Version (`src/data/changelog.ts`, dort steht auch `APP_VERSION`); die App sucht beim Zurückwechseln nach Updates
 
 ## Auf dem iPhone installieren
 
