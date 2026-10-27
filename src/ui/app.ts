@@ -165,6 +165,12 @@ function wireEvents(): void {
     if (collectorActive(G.s)) return; // holt der Kristall-Sammler gleich selbst ab
     toast('🎯', 'Mission erfüllt!', 'Hol dir deine Kristalle unter 🎯 ab.');
   });
+  let floorToast = 0;
+  on('resFloor', () => {
+    if (Date.now() - floorToast < 120000) return;
+    floorToast = Date.now();
+    toast('📦', 'Notvorrat aufgefüllt', 'Keine Kolonie fördert gerade Metall oder Kristall – baue eine Mine, einen Kristallbohrer und ein Solarkraftwerk.', false, 5000);
+  });
   on('autoCollect', ({ gems, n }) => {
     sfx.gems();
     toast('🤖', `Kristall-Sammler: +${fmt(gems, false)} 💎`, n === 1 ? '1 Mission abgeholt' : `${n} Missionen abgeholt`, false, 1800);

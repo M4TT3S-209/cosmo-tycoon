@@ -30,6 +30,7 @@ const BLOCK_TEXT: Record<Exclude<BuildBlock, null>, string> = {
   level: 'Kolonie-Stufe zu niedrig',
   res: 'Nicht genug Rohstoffe',
   slot: 'Kein Bauplatz frei',
+  empty: 'Bebaue zuerst alle Bauplätze dieser Kolonie',
 };
 
 /** Kosten als Text; fehlende Rohstoffe rot */
@@ -376,6 +377,7 @@ function createKolonienList(): Screen {
             h('div', { class: 'title' }, c.level >= COLONY_LEVEL_MAX ? 'Voll ausgebaut' : `Kolonie-Stufe ${next}`),
             c.level < COLONY_LEVEL_MAX ? h('div', { class: 'sub' }, ['+1 Bauplatz', '+10 % Produktion', unlocks.length ? 'neu: ' + unlocks.join(', ') : ''].filter(Boolean).join(' · ')) : null,
             c.level < COLONY_LEVEL_MAX && !c.grow ? costEl(g.cost, { time: g.time }) : null,
+            g.block === 'empty' ? h('div', { class: 'hint' }, '🏗️ ' + BLOCK_TEXT.empty) : null,
             left,
           ),
           c.level < COLONY_LEVEL_MAX ? btn : null,

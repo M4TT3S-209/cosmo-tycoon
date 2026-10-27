@@ -42,6 +42,30 @@ export function colonySlots(s: GameState, c: ColonyState): number {
 /** Startpaket für die ersten Gebäude (Mine, Kristallbohrer, Kraftwerk in zwei, drei Kolonien) */
 export const STARTER_RES: ResMap = { metal: 800, crystal: 400, deut: 150 };
 
+/**
+ * Notvorrat: Fördert keine Kolonie Metall (bzw. Kristall), wird bis zu diesem Bestand aufgefüllt –
+ * genug für Mine, Kristallbohrer und Solarkraftwerk. So kann man sich nie festbauen.
+ */
+export const RES_FLOOR: Partial<Record<ResId, number>> = { metal: 200, crystal: 100 };
+
+/** Füllt den Notvorrat auf. Gibt zurück, was dazukam. */
+export function resourceFloor(s: GameState): ResMap {
+  const added: ResMap = {};
+  if (!coloniesUnlocked(s)) return added;
+  let rates: Record<ResId, number> | null = null;
+  for (const k in RES_FLOOR) {
+    const id = k as ResId;
+    const floor = RES_FLOOR[id] ?? 0;
+    if (s.res[id] >= floor) continue;
+    rates ??= totalRates(s);
+    if (rates[id] > 0) continue;
+    added[id] = floor - s.res[id];
+    s.res[id] = floor;
+  }
+  if (Object.keys(added).length) emit('resFloor', {});
+  return added;
+}
+
 /** Legt für alle erreichten Planeten eine Kolonie an und füllt neue Bauplätze auf (entfernt nie etwas) */
 export function ensureColonies(s: GameState): void {
   if (!coloniesUnlocked(s)) return;
@@ -266,7 +290,7 @@ export function buildTime(p: number, id: string, toLevel: number): number {
   return def.time * Math.pow(TIME_GROWTH_COLONY, toLevel - 1) * (traitOf(p).time ?? 1);
 }
 
-export type BuildBlock = 'busy' | 'max' | 'level' | 'res' | 'slot' | null;
+export type BuildBlock = 'busy' | 'max' | 'level' | 'res' | 'slot' | 'empty' | null;
 
 /** Was ein Bau auf Platz `slot` kosten würde und ob er möglich ist */
 export function buildPlan(s: GameState, p: number, slot: number, id?: string): { id: string; to: number; cost: ResMap; time: number; block: BuildBlock } | null {
@@ -360,6 +384,8 @@ export function growPlan(s: GameState, p: number): { cost: ResMap; time: number;
   let block: BuildBlock = null;
   if (c.grow) block = 'busy';
   else if (c.level >= COLONY_LEVEL_MAX) block = 'max';
+  // Ausbau bringt einen neuen Bauplatz – erst die vorhandenen nutzen
+  else if (c.slots.some((b) => !b)) block = 'empty';
   else if (!hasResources(s, cost)) block = 'res';
   return { cost, time, block };
 }

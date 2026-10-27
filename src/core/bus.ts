@@ -31,6 +31,8 @@ export interface GameEvents {
   colonyBuilt: { planet: number; id: string; level: number };
   megaDone: { id: string; stage: number };
   weeklyNew: { key: string };
+  /** Notvorrat an Metall/Kristall aufgefüllt */
+  resFloor: Record<string, never>;
   /** Kristall-Sammler hat Missionen abgeholt */
   autoCollect: { gems: number; n: number };
 }

@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { deserialize } from '../src/core/save';
 import {
-  BASE_STORAGE, buildPlan, colonyReport, demolish, ensureColonies, exchange, exchangeRate, megaCostFor, prosperityMult, resCap,
-  startBuild, startGrow, startMega, tickColonies, updateColonyBuilds, updateMega,
+  BASE_STORAGE, RES_FLOOR, buildPlan, colonyReport, demolish, ensureColonies, exchange, exchangeRate, growPlan, megaCostFor, prosperityMult,
+  resCap, resourceFloor, startBuild, startGrow, startMega, tickColonies, updateColonyBuilds, updateMega,
 } from '../src/core/colonies';
+import { slowTick } from '../src/core/tick';
 import { autoLab } from '../src/core/actions';
 import { talentPointsTotal } from '../src/core/commander';
 import { compute, newCalc, offlineCapSec, offlineEfficiency, pendingQuantum, planetFor } from '../src/core/economy';
@@ -106,14 +107,59 @@ describe('Kolonien', () => {
     expect(s.colonies['0'].slots[0]).toBeNull();
   });
 
+  it('Kolonie-Ausbau erst, wenn alle Bauplätze bebaut sind', () => {
+    const s = colonyState();
+    expect(growPlan(s, 0)!.block).toBe('empty');
+    expect(startGrow(s, 0, 0)).toBe(false);
+    quickBuild(s, 0, 0, 'mine');
+    quickBuild(s, 0, 1, 'solar');
+    expect(growPlan(s, 0)!.block).toBe('empty');
+    quickBuild(s, 0, 2, 'kristall');
+    expect(growPlan(s, 0)!.block).toBeNull();
+  });
+
   it('Kolonie-Ausbau: neuer Bauplatz, Wohlstand steigt', () => {
     const s = colonyState();
+    quickBuild(s, 0, 0, 'mine');
+    quickBuild(s, 0, 1, 'solar');
+    quickBuild(s, 0, 2, 'kristall');
     const p0 = prosperityMult(s);
     expect(startGrow(s, 0, 0)).toBe(true);
     updateColonyBuilds(s, 1e12, []);
     expect(s.colonies['0'].level).toBe(2);
     expect(s.colonies['0'].slots).toHaveLength(4);
     expect(prosperityMult(s)).toBeCloseTo(p0 + 0.005);
+  });
+
+  it('Notvorrat: ohne Förderung nie festgebaut (Fall: Startpaket in den Kolonie-Ausbau gesteckt)', () => {
+    const s = colonyState();
+    // wie beim Nutzer: Galaxiekern auf Stufe 2, keine Gebäude, keine Rohstoffe
+    s.colonies['9'].level = 2;
+    s.res = { metal: 0, crystal: 0, deut: 0, alloy: 0, chips: 0 };
+    slowTick(s, 0);
+    expect(s.res.metal).toBe(RES_FLOOR.metal);
+    expect(s.res.crystal).toBe(RES_FLOOR.crystal);
+    // genug für Mine, Kristallbohrer und Solarkraftwerk
+    expect(startBuild(s, 9, 0, 'mine', 0)).toBe(true);
+    updateColonyBuilds(s, 1e12, []);
+    expect(startBuild(s, 9, 1, 'solar', 0)).toBe(true);
+    updateColonyBuilds(s, 1e12, []);
+    expect(startBuild(s, 9, 2, 'kristall', 0)).toBe(true);
+    updateColonyBuilds(s, 1e12, []);
+    // sobald gefördert wird, gibt es nichts mehr geschenkt
+    s.res.metal = 0;
+    s.res.crystal = 0;
+    expect(resourceFloor(s)).toEqual({});
+    expect(s.res.metal).toBe(0);
+  });
+
+  it('Notvorrat füllt nur auf, nimmt nie etwas weg', () => {
+    const s = colonyState();
+    s.res.metal = 5000;
+    s.res.crystal = 50;
+    expect(resourceFloor(s)).toEqual({ crystal: 50 });
+    expect(s.res.metal).toBe(5000);
+    expect(s.res.crystal).toBe(100);
   });
 
   it('offline: Kolonien produzieren über die ganze Abwesenheit, Bauten werden fertig', () => {

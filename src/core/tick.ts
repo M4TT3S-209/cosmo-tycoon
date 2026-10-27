@@ -4,7 +4,7 @@ import { autoLab, autoLabActive, earn, nextCometDelay } from './actions';
 import { autoOptions, autoSpend, autoStatus } from './autobuy';
 import { buildingBlocked, compute, isManaged, type Calc } from './economy';
 import { checkChallenge } from './challenges';
-import { ensureColonies, tickColonies, updateColonyBuilds, updateMega } from './colonies';
+import { ensureColonies, resourceFloor, tickColonies, updateColonyBuilds, updateMega } from './colonies';
 import { syncAbilities } from './commander';
 import { checkChains, tickEvents } from './events';
 import { autoCollect, checkAchievements, ensureQuests, trackDay, updateQuests } from './meta';
@@ -97,6 +97,7 @@ export function slowTick(s: GameState, now: number): void {
   colonyDt = 0;
   updateColonyBuilds(s, now);
   updateMega(s, now);
+  resourceFloor(s);
   if (autoSupernovaReady(s) && !s.challenge.active) supernova(s);
   if (autoLabActive(s)) autoLab(s);
   trackDay(s, now);
